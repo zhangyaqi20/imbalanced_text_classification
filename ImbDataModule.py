@@ -55,8 +55,6 @@ class ImbDataModule(pl.LightningDataModule):
         self.test_set = ImbDataset(test_data, tokenizer=self.tokenizer)
 
     def train_dataloader(self):
-        with open("debug.txt", "a") as f:
-            print(len(self.train_set), file=f)
         return DataLoader(self.train_set, 
                           batch_size=self.batch_size, 
                           num_workers=self.num_workers, 
