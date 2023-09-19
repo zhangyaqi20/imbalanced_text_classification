@@ -15,19 +15,22 @@ class ImbDataset(Dataset):
         return len(self.data)
     
     def __getitem__(self, index: int):
-        text = self.data.iloc[index]["text"]
-        encoded_text = self.tokenizer(
-            text,
-            padding="max_length",
-            truncation=True,
-            max_length=128,
-            return_tensors="pt"
-        )
-        label = self.data.iloc[index]["label"]
-        return {"encoded_text": {"input_ids": encoded_text["input_ids"].flatten(),
-                                 "attention_mask": encoded_text["attention_mask"].flatten(),
-                                 "token_type_ids": encoded_text["token_type_ids"].flatten()}, 
-                "label": label}
+        try: 
+          text = self.data.iloc[index]["text"]
+          encoded_text = self.tokenizer(
+              text,
+              padding="max_length",
+              truncation=True,
+              max_length=36,
+              return_tensors="pt"
+          )
+          label = self.data.iloc[index]["label"]
+        except KeyError:
+          return self.data[index] # resampled train set is already tokenized
+        else:
+          return {"encoded_text": {"input_ids": encoded_text["input_ids"].flatten(),
+                                  "attention_mask": encoded_text["attention_mask"].flatten()}, 
+                  "label": label}
     
 class ImbDataModule(pl.LightningDataModule):
     def __init__(self, data_path, tokenizer_url, batch_size, num_workers=os.cpu_count()) -> None:
@@ -41,7 +44,7 @@ class ImbDataModule(pl.LightningDataModule):
         data = pd.read_csv(self.data_path,
                            encoding = "utf-8",
                            engine = "python",
-                           header = 0)[2600:2700]
+                           header = 0)
         self.num_labels = data["label"].nunique()
         # split the whole data into train/val/test (6/2/2)
         train_data, val_data, test_data = np.split(data.sample(frac=1, random_state=0), 
@@ -50,8 +53,10 @@ class ImbDataModule(pl.LightningDataModule):
         self.train_set = ImbDataset(train_data, tokenizer=self.tokenizer)
         self.val_set = ImbDataset(val_data, tokenizer=self.tokenizer)
         self.test_set = ImbDataset(test_data, tokenizer=self.tokenizer)
-    
+
     def train_dataloader(self):
+        with open("debug.txt", "a") as f:
+            print(len(self.train_set), file=f)
         return DataLoader(self.train_set, 
                           batch_size=self.batch_size, 
                           num_workers=self.num_workers, 
