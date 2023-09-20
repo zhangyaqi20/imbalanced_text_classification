@@ -42,8 +42,8 @@ def main():
     reload_dataloaders_every_n_epochs = 1
     update_traindata_callback = UpdateTrainData(reload_dataloaders_every_n_epochs)
     trainer = pl.Trainer(
-        accelerator="auto",
-        devices=1,
+        accelerator="auto", devices="auto", strategy="auto",
+        precision=16,
         max_epochs=5,
         num_sanity_val_steps=0,
         # overfit_batches=1,
