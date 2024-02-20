@@ -5,11 +5,17 @@ from sklearn.metrics import classification_report
 from torchmetrics import MetricCollection, F1Score
 from transformers import AutoModelForSequenceClassification
 
-class ImbNN(pl.LightningModule):
-    def __init__(self, model_url, learning_rate, weight_decay, num_labels):
+class TextClassifier(pl.LightningModule):
+    def __init__(self, 
+                 model_url, 
+                 learning_rate,
+                 weight_decay,
+                 num_labels, 
+                 loss):
         super().__init__()
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_url)
-        self.loss_fn = nn.CrossEntropyLoss()
+        if loss == "CE_loss":
+            self.loss_fn = nn.CrossEntropyLoss()
         self.lr = learning_rate
         self.weight_decay = weight_decay
         self.num_labels = num_labels
