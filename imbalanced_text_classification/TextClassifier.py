@@ -1,8 +1,9 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from sklearn.metrics import classification_report
-from torchmetrics import MetricCollection, F1Score
+from torchmetrics import MetricCollection
+from torchmetrics.classification import Precision, Recall, F1Score
+from torchmetrics.classification import AveragePrecision
 from transformers import AutoModelForSequenceClassification
 
 class TextClassifier(pl.LightningModule):
@@ -14,6 +15,8 @@ class TextClassifier(pl.LightningModule):
                  loss):
         super().__init__()
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_url)
+        self.softmax = nn.Softmax(dim=1)
+
         if loss == "CE_loss":
             self.loss_fn = nn.CrossEntropyLoss()
         self.lr = learning_rate
@@ -24,15 +27,22 @@ class TextClassifier(pl.LightningModule):
         self.val_losses = []
 
         metrics = MetricCollection({
-            "f1_macro": F1Score(task="binary", num_labels=self.num_labels, average="macro")
+            "auroc": AveragePrecision(task="binary", num_labels=self.num_labels, average="micro"),
+            "precision_macro": Precision(task="binary", num_labels=self.num_labels, average="macro"),
+            "precision_micro": Precision(task="binary", num_labels=self.num_labels, average="micro"),
+            "recall_macro": Recall(task="binary", num_labels=self.num_labels, average="macro"),
+            "recall_micro": Recall(task="binary", num_labels=self.num_labels, average="micro"),
+            "f1_macro": F1Score(task="binary", num_labels=self.num_labels, average="macro"),
+            "f1_micro": F1Score(task="binary", num_labels=self.num_labels, average="micro"),
+            "f1_per_label": F1Score(task="binary", num_labels=self.num_labels, average="none"),
         })
         self.train_metrics = metrics.clone(prefix="train_")
         self.val_metrics = metrics.clone(prefix="val_")
         self.test_metrics = metrics.clone(prefix="test_")
 
     def forward(self, x):
-        y_hat = self.classifier(**x).logits
-        return y_hat
+        outputs = self.classifier(**x).logits
+        return outputs
 
     def training_step(self, batch, batch_idx):
         loss, preds, targets = self._common_step(batch, batch_idx)
@@ -72,10 +82,10 @@ class TextClassifier(pl.LightningModule):
     def _common_step(self, batch, batch_idx):
         x = batch["encoded_text"]
         y = batch["label"]
-        y_hat = self.forward(x)
-        loss = self.loss_fn(y_hat.view(-1, self.num_labels), y.view(-1))
-        y_hat = torch.argmax(y_hat, dim=1)
-        return loss, y_hat, y
+        outputs = self.forward(x)
+        loss = self.loss_fn(input=outputs, target=y)
+        y_prob = self.softmax(outputs)[:,1].squeeze(-1)
+        return loss, y_prob, y
     
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

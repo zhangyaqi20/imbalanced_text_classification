@@ -1,17 +1,19 @@
 import mlflow
 import pytorch_lightning as pl
+import sys
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
-from imbalanced_text_classification.ImbalancedDataModule import ImbalancedDataModule
-from imbalanced_text_classification.TextClassifier import TextClassifier
+from ImbalancedDataModule import ImbalancedDataModule
+from TextClassifier import TextClassifier
 
 def main():
     mlflow_tracking_uri = "./logs"
-    mlflow.set_training_uri(mlflow_tracking_uri)
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
     experiment_name = "text_classification_imbalalanced"
     experiment = mlflow.set_experiment(experiment_name)
     experiment_id = experiment.experiment_id
     with mlflow.start_run(experiment_id=experiment_id) as run:
+        run_id = run.info.run_id
         pl_seed = 42
         mlflow.log_param("seed", pl_seed)
         pl.seed_everything(pl_seed)
@@ -36,7 +38,7 @@ def main():
 
         model_url = "bert-base-uncased"
         mlflow.log_param("model_url", model_url)
-        learning_rate = 1e-5,
+        learning_rate = 1e-5
         mlflow.log_param("learning_rate", learning_rate)
         weight_decay = 0.0
         mlflow.log_param("weight_decay", weight_decay)
@@ -49,7 +51,7 @@ def main():
             num_labels=datamodule.num_labels,
             loss=loss
         )
-
+        
         ckpt_filename = "-{epoch:02d}-{val_f1_macro:.2f}"
         checkpoint_callback = ModelCheckpoint(
             save_top_k=1,
@@ -60,7 +62,6 @@ def main():
             mode="max"
         )
         
-        run_id = run.info.run_id
         mlflow_logger = MLFlowLogger(experiment_name=experiment_name, tracking_uri=mlflow_tracking_uri)
         mlflow_logger._run_id = run_id
 
