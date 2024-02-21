@@ -1,6 +1,8 @@
+import pandas as pd
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+from collections import Counter
 from torchmetrics import MetricCollection
 from torchmetrics.classification import Precision, Recall, F1Score
 from torchmetrics.classification import AveragePrecision
@@ -16,6 +18,9 @@ class TextClassifier(pl.LightningModule):
         super().__init__()
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_url)
         self.softmax = nn.Softmax(dim=1)
+
+        self.train_texts = []
+        self.train_labels = []
 
         if loss == "CE_loss":
             self.loss_fn = nn.CrossEntropyLoss()
@@ -48,6 +53,7 @@ class TextClassifier(pl.LightningModule):
         loss, preds, targets = self._common_step(batch, batch_idx)
         self.train_losses.append(loss)
         self.train_metrics.update(preds=preds, target=targets)
+        return loss
         
     def on_train_epoch_end(self):
         avg_loss = torch.stack(self.train_losses).mean()
@@ -56,11 +62,17 @@ class TextClassifier(pl.LightningModule):
         metrics = self.train_metrics.compute()
         self.log_dict(metrics, on_step=False, on_epoch=True, prog_bar=True)
         self.train_metrics.reset()
+
+        train_sampled = pd.DataFrame({"text": torch.stack(self.train_texts).tolist(), "label": torch.stack(self.train_labels).tolist()})
+        train_sampled.to_csv("resampled_train_data.csv", index=False)
+        raise NotImplementedError
+        return avg_loss
         
     def validation_step(self, batch, batch_idx):
         loss, preds, targets = self._common_step(batch, batch_idx)
         self.val_losses.append(loss)
         self.val_metrics.update(preds=preds, target=targets)
+        return loss
     
     def on_validation_epoch_end(self):
         avg_loss = torch.stack(self.val_losses).mean()
@@ -69,10 +81,12 @@ class TextClassifier(pl.LightningModule):
         metrics = self.val_metrics.compute()
         self.log_dict(metrics, on_step=False, on_epoch=True, prog_bar=True)
         self.val_metrics.reset()
+        return avg_loss
 
     def test_step(self, batch, batch_idx):
-        _, preds, targets = self._common_step(batch, batch_idx)
+        loss, preds, targets = self._common_step(batch, batch_idx)
         self.test_metrics.update(preds=preds, target=targets)
+        return loss
     
     def on_test_epoch_end(self):
         metrics = self.test_metrics.compute()
@@ -82,6 +96,9 @@ class TextClassifier(pl.LightningModule):
     def _common_step(self, batch, batch_idx):
         x = batch["encoded_text"]
         y = batch["label"]
+        if self.training:
+            self.train_texts += x['input_ids']
+            self.train_labels += y
         outputs = self.forward(x)
         loss = self.loss_fn(input=outputs, target=y)
         y_prob = self.softmax(outputs)[:,1].squeeze(-1)
