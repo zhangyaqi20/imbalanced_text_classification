@@ -13,33 +13,33 @@ class TextClassifier(pl.LightningModule):
                  model_url, 
                  learning_rate,
                  weight_decay,
-                 num_labels, 
+                 num_classes, 
                  loss):
         super().__init__()
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_url)
         self.softmax = nn.Softmax(dim=1)
 
-        self.train_texts = []
-        self.train_labels = []
+        # self.train_texts = []
+        # self.train_labels = []
 
         if loss == "CE_loss":
             self.loss_fn = nn.CrossEntropyLoss()
         self.lr = learning_rate
         self.weight_decay = weight_decay
-        self.num_labels = num_labels
+        self.num_classes = num_classes
 
         self.train_losses = []
         self.val_losses = []
 
         metrics = MetricCollection({
-            "auroc": AveragePrecision(task="binary", num_labels=self.num_labels, average="micro"),
-            "precision_macro": Precision(task="binary", num_labels=self.num_labels, average="macro"),
-            "precision_micro": Precision(task="binary", num_labels=self.num_labels, average="micro"),
-            "recall_macro": Recall(task="binary", num_labels=self.num_labels, average="macro"),
-            "recall_micro": Recall(task="binary", num_labels=self.num_labels, average="micro"),
-            "f1_macro": F1Score(task="binary", num_labels=self.num_labels, average="macro"),
-            "f1_micro": F1Score(task="binary", num_labels=self.num_labels, average="micro"),
-            "f1_per_label": F1Score(task="binary", num_labels=self.num_labels, average="none"),
+            "auroc": AveragePrecision(task="binary", num_classes=self.num_classes, average="micro"),
+            "precision_macro": Precision(task="binary", num_classes=self.num_classes, average="macro"),
+            "precision_micro": Precision(task="binary", num_classes=self.num_classes, average="micro"),
+            "recall_macro": Recall(task="binary", num_classes=self.num_classes, average="macro"),
+            "recall_micro": Recall(task="binary", num_classes=self.num_classes, average="micro"),
+            "f1_macro": F1Score(task="binary", num_classes=self.num_classes, average="macro"),
+            "f1_micro": F1Score(task="binary", num_classes=self.num_classes, average="micro"),
+            "f1_per_label": F1Score(task="binary", num_classes=self.num_classes, average="none"),
         })
         self.train_metrics = metrics.clone(prefix="train_")
         self.val_metrics = metrics.clone(prefix="val_")
@@ -63,9 +63,8 @@ class TextClassifier(pl.LightningModule):
         self.log_dict(metrics, on_step=False, on_epoch=True, prog_bar=True)
         self.train_metrics.reset()
 
-        train_sampled = pd.DataFrame({"text": torch.stack(self.train_texts).tolist(), "label": torch.stack(self.train_labels).tolist()})
-        train_sampled.to_csv("resampled_train_data.csv", index=False)
-        raise NotImplementedError
+        # train_sampled = pd.DataFrame({"text": torch.stack(self.train_texts).tolist(), "label": torch.stack(self.train_labels).tolist()})
+        # train_sampled.to_csv("resampled_train_data.csv", index=False)
         return avg_loss
         
     def validation_step(self, batch, batch_idx):
@@ -96,9 +95,9 @@ class TextClassifier(pl.LightningModule):
     def _common_step(self, batch, batch_idx):
         x = batch["encoded_text"]
         y = batch["label"]
-        if self.training:
-            self.train_texts += x['input_ids']
-            self.train_labels += y
+        # if self.training:
+        #     self.train_texts += x['input_ids']
+        #     self.train_labels += y
         outputs = self.forward(x)
         loss = self.loss_fn(input=outputs, target=y)
         y_prob = self.softmax(outputs)[:,1].squeeze(-1)

@@ -84,10 +84,10 @@ class ImbalancedDataModule(pl.LightningDataModule):
         self._print_data_info(test_data, "test", "label")
 
         train_data = train_data.reset_index()
-        sample_weights, num_samples = self._get_oversampling_weights(train_data, ratio=1.0)
-        self.oversampler = WeightedRandomSampler(weights=sample_weights,
-                                                 num_samples=num_samples,
-                                                 replacement=True)
+        # sample_weights, num_samples = self._get_oversampling_weights(train_data, ratio=1.0)
+        # self.oversampler = WeightedRandomSampler(weights=sample_weights,
+        #                                          num_samples=num_samples,
+        #                                          replacement=True)
         self.train_set = ImbalancedDataset(train_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len)
         val_data = val_data.reset_index()
         self.val_set = ImbalancedDataset(val_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len)
@@ -98,8 +98,8 @@ class ImbalancedDataModule(pl.LightningDataModule):
         return DataLoader(self.train_set, 
                           batch_size=self.batch_size, 
                           num_workers=self.num_workers, 
-                          sampler=self.oversampler,
-                        #   shuffle=True
+                        #   sampler=self.oversampler,
+                          shuffle=True
                           )
 
     def val_dataloader(self):
