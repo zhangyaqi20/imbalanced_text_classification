@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+python imbalanced_text_classification/main.py --data_name davidson-thon --data_type multi --num_classes 3 --label_col label_multi --train_filename data_clean.csv --variant sampling_modifiedRS --sampling_modifiedRS_mode undersampling --pl_seed 0 --using_gpus 7 &> ./outputs/davidson-thon_sampling_modifiedROS_seed0_output.txt &

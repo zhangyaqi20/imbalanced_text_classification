@@ -7,6 +7,7 @@ from torchmetrics import MetricCollection
 from torchmetrics.classification import Precision, Recall, F1Score, Accuracy, AveragePrecision
 from transformers import AutoModelForSequenceClassification
 from loss.FocalLoss import FocalLoss
+from loss.Loss import Loss
 
 class TextClassifier(pl.LightningModule):
     def __init__(self, 
@@ -14,18 +15,33 @@ class TextClassifier(pl.LightningModule):
                  learning_rate,
                  weight_decay,
                  num_classes, 
+                 device: list,
                  loss: str,
-                 fl_gamma: float = None):
+                 wce_alpha: float = None,
+                 fl_gamma: float = None
+                 ):
         super().__init__()
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_url, num_labels=num_classes)
 
         self.lr = learning_rate
         self.weight_decay = weight_decay
         self.num_classes = num_classes
-        if loss == "CE_Loss":
+        if loss == Loss.CE_Loss:
             self.loss_fn = nn.CrossEntropyLoss()
-        elif loss == "Focal_Loss":
-            self.loss_fn = FocalLoss(num_classes=self.num_classes, gamma=fl_gamma)
+        elif loss == Loss.Weighted_CE_Loss:
+            if self.num_classes == 2:
+                self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
+            else:
+                raise NotImplementedError
+            self.loss_fn = nn.CrossEntropyLoss(weight=self.weights)
+        elif loss == Loss.Focal_Loss:
+            self.loss_fn = FocalLoss(gamma=fl_gamma)
+        elif loss == Loss.Weighted_Focal_Loss:
+            if self.num_classes == 2:
+                self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
+            else:
+                raise NotImplementedError
+            self.loss_fn = FocalLoss(gamma=fl_gamma, alpha=self.weights)
 
         self.train_losses = []
         self.val_losses = []
@@ -34,11 +50,11 @@ class TextClassifier(pl.LightningModule):
             "accuracy": Accuracy(task="multiclass", num_classes=self.num_classes),
             "auprc": AveragePrecision(task="multiclass", num_classes=self.num_classes),
             "precision_macro": Precision(task="multiclass", num_classes=self.num_classes, average="macro"),
-            "precision_micro": Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
+            "precision_weighted": Precision(task="multiclass", num_classes=self.num_classes, average="weighted"),
             "recall_macro": Recall(task="multiclass", num_classes=self.num_classes, average="macro"),
-            "recall_micro": Recall(task="multiclass", num_classes=self.num_classes, average="micro"),
+            "recall_weighted": Recall(task="multiclass", num_classes=self.num_classes, average="weighted"),
             "f1_macro": F1Score(task="multiclass", num_classes=self.num_classes, average="macro"),
-            "f1_micro": F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
+            "f1_weighted": F1Score(task="multiclass", num_classes=self.num_classes, average="weighted"),
             # "f1_per_label": F1Score(task="multiclass", num_classes=self.num_classes, average="none"), # cannot be logged as single metric
         })
         

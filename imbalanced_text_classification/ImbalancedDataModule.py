@@ -3,6 +3,7 @@ import numpy as np
 import os
 import pandas as pd
 import pytorch_lightning as pl
+from sampler.ModifiedRandomSampler import ModifiedRandomSampler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler
@@ -48,7 +49,9 @@ class ImbalancedDataModule(pl.LightningDataModule):
                  batch_size=32, 
                  max_token_len=128,
                  num_workers=os.cpu_count(),
-                 sampling_percentage=None) -> None:
+                 sampling_weightedRS_percentage=None,
+                 sampling_modifiedRS_mode=None,
+                 sampling_modifiedRS_rho=None) -> None:
         super().__init__()
         self.data_path = data_path
         self.train_filename = train_filename
@@ -59,52 +62,67 @@ class ImbalancedDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.max_token_len = max_token_len
         self.num_workers = num_workers
-        self.sampling_percentage = sampling_percentage
+        self.sampling_weightedRS_percentage = sampling_weightedRS_percentage
+        self.sampling_modifiedRS_mode = sampling_modifiedRS_mode
+        self.sampling_modifiedRS_rho = sampling_modifiedRS_rho
+
+        self.train_set = None
+        self.val_set = None
+        self.test_set = None
 
     def setup(self, stage: Optional[str] = None):
         # Get data splits.
-        print("------ Dataset Statistics ------")
-        print("Raw data reading from CSV files:")
-        print(f"| Split\t | Size\t | Label Counts")
-        if self.test_filename:
-            test_data = self._read_from_csv(self.data_path + self.test_filename)
-            self._print_data_info(test_data, "test", self.label_col)
-            if self.val_filename:
-                val_data = self._read_from_csv(self.data_path + self.val_filename)
-                train_data = self._read_from_csv(self.data_path + self.train_filename)
-                self._print_data_info(train_data, "train", self.label_col)
-                self._print_data_info(val_data, "val", self.label_col)
+        
+        if not self.train_set and not self.val_set and not self.test_set:
+            print("Calling ImbalancedDataModule.setup() for train...")
+            print("------ Dataset Statistics ------")
+            print("Raw data reading from CSV files:")
+            print(f"| Split\t | Size\t | Label Counts")
+            if self.test_filename:
+                test_data = self._read_from_csv(self.data_path + self.test_filename)
+                self._print_data_info(test_data, "test", self.label_col)
+                if self.val_filename:
+                    val_data = self._read_from_csv(self.data_path + self.val_filename)
+                    train_data = self._read_from_csv(self.data_path + self.train_filename)
+                    self._print_data_info(train_data, "train", self.label_col)
+                    self._print_data_info(val_data, "val", self.label_col)
+                else:
+                    train_val_data = self._read_from_csv(self.data_path + self.train_filename)
+                    self._print_data_info(train_val_data, "train_val", self.label_col)
+                    train_data, val_data = train_test_split(train_val_data, test_size=0.25, random_state=0, stratify=train_val_data[self.label_col])
             else:
-                train_val_data = self._read_from_csv(self.data_path + self.train_filename)
-                self._print_data_info(train_val_data, "train_val", self.label_col)
-                train_data, val_data = train_test_split(train_val_data, test_size=0.2, random_state=0, stratify=train_val_data[self.label_col])
-        else:
-            data = self._read_from_csv(self.data_path + self.train_filename)
-            self._print_data_info(data, "all", self.label_col)
-            train_val_data, test_data = train_test_split(data, test_size=0.2, random_state=0, stratify=data[self.label_col])
-            train_data, val_data = train_test_split(train_val_data, test_size=0.2, random_state=0, stratify=train_val_data[self.label_col])
+                data = self._read_from_csv(self.data_path + self.train_filename)
+                self._print_data_info(data, "all", self.label_col)
+                train_val_data, test_data = train_test_split(data, test_size=0.2, random_state=0, stratify=data[self.label_col])
+                train_data, val_data = train_test_split(train_val_data, test_size=0.25, random_state=0, stratify=train_val_data[self.label_col])
+            print("After splitting for training:")
+            print(f"| Split\t | Size\t | Label Counts")
+            self._print_data_info(train_data, "train", self.label_col)
+            self._print_data_info(val_data, "val", self.label_col)
+            self._print_data_info(test_data, "test", self.label_col)
 
-        print("After split (used for training):")
-        print(f"| Split\t | Size\t | Label Counts")
-        self._print_data_info(train_data, "train", self.label_col)
-        self._print_data_info(val_data, "val", self.label_col)
-        self._print_data_info(test_data, "test", self.label_col)
-
-        train_data = train_data.reset_index()
-        if self.sampling_percentage is not None:
-            sample_weights, num_samples = self._get_oversampling_weights(train_data, ratio=self.sampling_percentage)
-            print(f"Resampling with sampling_percentage = {self.sampling_percentage} => training set has {num_samples} samples.")
-            self.sampler = WeightedRandomSampler(weights=sample_weights,
-                                                    num_samples=num_samples,
-                                                    replacement=True)
-        self.train_set = ImbalancedDataset(train_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
-        val_data = val_data.reset_index()
-        self.val_set = ImbalancedDataset(val_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
-        test_data = test_data.reset_index()
-        self.test_set = ImbalancedDataset(test_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
+            train_data = train_data.reset_index()
+            self.train_set = ImbalancedDataset(train_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
+            self.sampler = None
+            if self.sampling_weightedRS_percentage is not None:
+                sample_weights, num_samples = self._get_oversampling_weights(train_data, ratio=self.sampling_weightedRS_percentage)
+                print(f"Resampling with sampling_weightedRS_percentage = {self.sampling_weightedRS_percentage} => training set has {num_samples} samples.")
+                self.sampler = WeightedRandomSampler(weights=sample_weights,
+                                                        num_samples=num_samples,
+                                                        replacement=True)
+            if self.sampling_modifiedRS_rho is not None:
+                self.sampler = ModifiedRandomSampler(dataset=self.train_set,
+                                                     rho_target=self.sampling_modifiedRS_rho,
+                                                     mode=self.sampling_modifiedRS_mode)
+            val_data = val_data.reset_index()
+            self.val_set = ImbalancedDataset(val_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
+            test_data = test_data.reset_index()
+            self.test_set = ImbalancedDataset(test_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
+        else: 
+            print("Calling ImbalancedDataModule.setup() for validation/test...")
     
     def train_dataloader(self):
-        if self.sampling_percentage is not None:
+        if self.sampler is not None:
             train_dataloader_resampled = DataLoader(self.train_set, 
                                                     batch_size=self.batch_size, 
                                                     num_workers=self.num_workers, 
