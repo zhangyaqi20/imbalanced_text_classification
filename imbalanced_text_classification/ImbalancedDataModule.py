@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import WeightedRandomSampler
 from transformers import AutoTokenizer
 from typing import Optional
-from utils.check_resampled_dataloader import check_resampled_dataloader
+from utils.utils import check_dataloader_label_counts
 
 class ImbalancedDataset(Dataset):
     def __init__(self, data, tokenizer, max_token_len, label_col="label") -> None:
@@ -129,7 +129,8 @@ class ImbalancedDataModule(pl.LightningDataModule):
                                                     sampler=self.sampler,
                                                     shuffle=False
                                                     )
-            check_resampled_dataloader(train_dataloader_resampled)
+            label_counts = check_dataloader_label_counts(train_dataloader_resampled)
+            print(f"Label counts after resampling: {label_counts}")
             return train_dataloader_resampled
         else:
             return DataLoader(self.train_set, 

@@ -31,6 +31,7 @@ class FocalLoss(nn.Module):
         self.gamma = gamma
         self.alpha = alpha
         self.reduction = reduction
+        print(f"Using Focal Loss: gamma={self.gamma}\talpha={self.alpha}")
 
     def forward(self, input, target):
         # [N, 1]

@@ -1,7 +1,1 @@
 #!/usr/bin/env bash
-# python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant wfl --pl_seed 0 --using_gpus 3 &> ./outputs/us-election-2020_wfl_seed0_output.txt &
-# python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant wfl --pl_seed 21 --using_gpus 4 &> ./outputs/us-election-2020_wfl_seed21_output.txt &
-# python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant wfl --pl_seed 42 --using_gpus 5 &> ./outputs/us-election-2020_wfl_seed42_output.txt &
-# python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant wfl --pl_seed 0 --using_gpus 3 &> ./outputs/us-election-2020_wfl_seed0_output.txt &
-# python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant wfl --pl_seed 21 --using_gpus 4 &> ./outputs/us-election-2020_wfl_seed21_output.txt &
-# python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant wfl --pl_seed 42 --using_gpus 5 &> ./outputs/us-election-2020_wfl_seed42_output.txt &

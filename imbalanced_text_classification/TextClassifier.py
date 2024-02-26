@@ -8,6 +8,7 @@ from torchmetrics.classification import Precision, Recall, F1Score, Accuracy, Av
 from transformers import AutoModelForSequenceClassification
 from loss.FocalLoss import FocalLoss
 from loss.Loss import Loss
+from utils.utils import check_dataloader_label_counts
 
 class TextClassifier(pl.LightningModule):
     def __init__(self, 
@@ -17,8 +18,9 @@ class TextClassifier(pl.LightningModule):
                  num_classes, 
                  device: list,
                  loss: str,
-                 wce_alpha: float = None,
-                 fl_gamma: float = None
+                 wce_alpha: None,
+                 fl_gamma: float = None,
+                 adjusting_th: bool = False
                  ):
         super().__init__()
         self.classifier = AutoModelForSequenceClassification.from_pretrained(model_url, num_labels=num_classes)
@@ -26,22 +28,25 @@ class TextClassifier(pl.LightningModule):
         self.lr = learning_rate
         self.weight_decay = weight_decay
         self.num_classes = num_classes
-        if loss == Loss.CE_Loss:
-            self.loss_fn = nn.CrossEntropyLoss()
-        elif loss == Loss.Weighted_CE_Loss:
+        self.weights = None
+        if wce_alpha is not None:
             if self.num_classes == 2:
                 self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
             else:
-                raise NotImplementedError
-            self.loss_fn = nn.CrossEntropyLoss(weight=self.weights)
-        elif loss == Loss.Focal_Loss:
-            self.loss_fn = FocalLoss(gamma=fl_gamma)
-        elif loss == Loss.Weighted_Focal_Loss:
-            if self.num_classes == 2:
-                self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
-            else:
-                raise NotImplementedError
+                self.weights = torch.FloatTensor(wce_alpha).cuda(device=device[0])
+        if fl_gamma is not None:
             self.loss_fn = FocalLoss(gamma=fl_gamma, alpha=self.weights)
+        else:
+            self.loss_fn = nn.CrossEntropyLoss(weight=self.weights)
+            print(f"Using Cross Entropy Loss: alpha={self.weights}")
+        
+        self.adjusting_th = adjusting_th
+        if self.adjusting_th:
+            train_dl = self.trainer.datamodule.get_train_dataloader()
+            train_label_counts = check_dataloader_label_counts(train_dl)
+            print(f"{train_label_counts}")
+            self.train_priors = [counts/sum(train_label_counts.values()) for _, counts in sorted(train_label_counts.items())]
+            print(f"{self.train_priors}")
 
         self.train_losses = []
         self.val_losses = []
@@ -67,6 +72,8 @@ class TextClassifier(pl.LightningModule):
 
     def forward(self, x):
         outputs = self.classifier(**x).logits
+        if self.adjusting_th:
+            pass
         return outputs
 
     def training_step(self, batch, batch_idx):
@@ -135,6 +142,11 @@ class TextClassifier(pl.LightningModule):
         y = batch["label"]
         logits = self.forward(x)
         loss = self.loss_fn(input=logits, target=y)
+
+        if self.adjusting_th:
+            softmax = nn.Softmax(dim=1)
+            probs = softmax(logits)
+            probs_delta = []
         return loss, logits, y
     
     def configure_optimizers(self):
