@@ -17,7 +17,7 @@ class TextClassifier(pl.LightningModule):
                  weight_decay,
                  num_classes, 
                  device: list,
-                 loss: str,
+                 loss: Loss,
                  wce_alpha: None,
                  fl_gamma: float = None,
                  adjusting_th: bool = False
@@ -31,7 +31,10 @@ class TextClassifier(pl.LightningModule):
         self.weights = None
         if wce_alpha is not None:
             if self.num_classes == 2:
-                self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
+                if loss == FocalLoss and wce_alpha == 1:
+                    self.weights = torch.FloatTensor([wce_alpha]*2).cuda(device=device[0])
+                else:
+                    self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
             else:
                 self.weights = torch.FloatTensor(wce_alpha).cuda(device=device[0])
         if fl_gamma is not None:
@@ -41,12 +44,7 @@ class TextClassifier(pl.LightningModule):
             print(f"Using Cross Entropy Loss: alpha={self.weights}")
         
         self.adjusting_th = adjusting_th
-        if self.adjusting_th:
-            train_dl = self.trainer.datamodule.get_train_dataloader()
-            train_label_counts = check_dataloader_label_counts(train_dl)
-            print(f"{train_label_counts}")
-            self.train_priors = [counts/sum(train_label_counts.values()) for _, counts in sorted(train_label_counts.items())]
-            print(f"{self.train_priors}")
+        self.train_priors = None
 
         self.train_losses = []
         self.val_losses = []
@@ -143,11 +141,18 @@ class TextClassifier(pl.LightningModule):
         logits = self.forward(x)
         loss = self.loss_fn(input=logits, target=y)
 
-        if self.adjusting_th:
+        if self.adjusting_th and not self.training:
+            if self.train_priors is None:
+                train_dl = self.trainer.datamodule.train_dataloader()
+                train_label_counts = check_dataloader_label_counts(train_dl)
+                self.train_priors = torch.tensor([counts/sum(train_label_counts.values()) for _, counts in sorted(train_label_counts.items())]).cuda(self.device)
+            print(f"Threshold moving with train set priors = {self.train_priors}")
             softmax = nn.Softmax(dim=1)
             probs = softmax(logits)
-            probs_delta = []
-        return loss, logits, y
+            probs_delta = probs / self.train_priors
+            return loss, probs_delta, y
+        else:
+            return loss, logits, y
     
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)

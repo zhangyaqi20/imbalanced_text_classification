@@ -76,3 +76,9 @@ class FocalLoss(nn.Module):
 
     def __repr__(self):
         return str(self)
+    
+# output_gamma2_alpha = FocalLoss(gamma=2, alpha=torch.tensor([0.7, 0.3]))(input, target)
+# output_gamma0_alpha = FocalLoss(gamma=0, alpha=torch.tensor([0.7, 0.3]))(input, target)
+# output_gamma0_alpha1 = FocalLoss(gamma=1, alpha=torch.tensor([1.0]*2))(input, target)
+# output_gamma0_alpha05 = FocalLoss(gamma=1, alpha=torch.tensor([0.5]*2))(input, target)
+# output_gamma2_alpha, output_gamma0_alpha, output_gamma0_alpha1, output_gamma0_alpha05

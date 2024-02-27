@@ -22,7 +22,6 @@ MODEL_URL = "bert-base-uncased"
 LEARNING_RATE = 5e-5 # baseline: 5e-5
 WEIGHT_DECAY = 0.01 # baseline: 0.01
 # Trainer
-MAX_EPOCHS = 10
 NUM_SANITY_VAL_STEPS = 0
 ACCELERATOR = "gpu"
 MONITOR = "val_f1_macro"
@@ -36,10 +35,11 @@ class Variant(Enum):
     WCE = "wce"
     FL = "fl"
     WFL = "wfl"
+    TH = "th"
 
 def main(args):
     variant = Variant(args.variant)
-    if variant == Variant.Baseline:
+    if variant == Variant.Baseline or variant == Variant.TH:
         objective(args)
     else:
         pruner = optuna.pruners.NopPruner() # Disable pruning to run all(..) epochs (optuna.pruners.MedianPruner())
@@ -50,10 +50,10 @@ def main(args):
             if args.data_type == "bin":
                 search_space = {"wce_alpha": args.wce_alpha_search_space_bin}
             else:
-                wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi] # The perfect class weights = 1/N_c
+                wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi,] # The perfect class weights = 1/N_c
                 # Generate random class weights (probabilities)
                 probs_pool = torch.tensor(range(1,10)) * 0.1
-                for i in range(args.wce_multi_trial_nums - 1):
+                for i in range(args.wce_multi_trial_nums - len(wce_alpha_search_space_multi)):
                     generator_i = torch.Generator()
                     generator_i.manual_seed(i)
                     a = torch.randint(0, 9, (args.num_classes,), generator=generator_i).tolist()
@@ -68,10 +68,11 @@ def main(args):
                 search_space = {"wce_alpha": args.wce_alpha_search_space_bin,
                                 "fl_gamma": args.fl_gamma_search_space}
             else:
-                wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi] # The perfect class weights = 1/N_c
+                wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi,# The perfect class weights = 1/N_c
+                                                torch.tensor([1.0]*args.num_classes)] # pure FL
                 # Generate random class weights (probabilities)
                 probs_pool = torch.tensor(range(1,10)) * 0.1
-                for i in range(args.wce_multi_trial_nums - 1):
+                for i in range(args.wce_multi_trial_nums - len(wce_alpha_search_space_multi)):
                     generator_i = torch.Generator()
                     generator_i.manual_seed(i)
                     a = torch.randint(0, 9, (args.num_classes,), generator=generator_i).tolist()
@@ -128,7 +129,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                 "learning_rate": LEARNING_RATE,
                 "weight_decay": WEIGHT_DECAY,
                 # Trainer
-                "max_epochs": MAX_EPOCHS,
+                "max_epochs": args.max_epochs,
                 "num_sanity_val_steps": NUM_SANITY_VAL_STEPS,
                 "accelerator": ACCELERATOR,
                 "devices": args.using_gpus,
@@ -141,55 +142,62 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         sampling_weightedRS_percentage = None
         fl_gamma = None
         wce_alpha = None
-        if variant != Variant.Baseline:
-            print(f"MLflow Saved Child Search Trial {trial.number} Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
-            if variant == Variant.FL:
-                loss = Loss.Focal_Loss
-                fl_gamma = trial.suggest_float("fl_gamma", 0.0, 5.0)
-                mlflow.log_param("fl_gamma_search_space", args.fl_gamma_search_space)
-            elif variant == Variant.WCE:
-                loss = Loss.Weighted_CE_Loss
-                if args.data_type == "bin":
-                    wce_alpha = trial.suggest_float("wce_alpha", 0.0, 1.0)
-                    mlflow.log_param("wce_alpha_search_space_bin", args.wce_alpha_search_space_bin)
-                else:
-                    wce_alpha_index = trial.suggest_int("wce_alpha_index", 0, (args.wce_multi_trial_nums-1))
-                    wce_alpha = args.wce_alpha_search_space_multi[wce_alpha_index]
-                    mlflow.log_param("wce_alpha_search_space_multi", args.wce_alpha_search_space_multi)
-            elif variant == Variant.WFL:
-                loss = Loss.Weighted_Focal_Loss
-                fl_gamma = trial.suggest_float("fl_gamma", 0.0, 5.0)
-                mlflow.log_param("fl_gamma_search_space", args.fl_gamma_search_space)
-                if args.data_type == "bin":
-                    wce_alpha = trial.suggest_float("wce_alpha", 0.0, 1.0)
-                    mlflow.log_param("wce_alpha_search_space_bin", args.wce_alpha_search_space_bin)
-                else:
-                    wce_alpha_index = trial.suggest_int("wce_alpha_index", 0, (args.wce_multi_trial_nums-1))
-                    wce_alpha = args.wce_alpha_search_space_multi[wce_alpha_index]
-                    mlflow.log_param("wce_alpha_search_space_multi", args.wce_alpha_search_space_multi)
-            elif variant == Variant.Sampling_ModifiedRS:
-                sampling_modifiedRS_rho = trial.suggest_float("sampling_modifiedRS_rho", 1.0, 20.0)
-                sampling_modifiedRS_mode = args.sampling_modifiedRS_mode
-                mlflow.log_params(
-                    params={
-                        "sampling_modifiedRS_rho_search_space": args.sampling_modifiedRS_rho_search_space,
-                        "sampling_modifiedRS_mode": sampling_modifiedRS_mode
-                        }
-                    )
-            elif variant == Variant.Sampling_WeightedRS:
-                sampling_weightedRS_percentage = trial.suggest_float("sampling_weightedRS_percentage", -0.5, 10.0)
-                mlflow.log_param("sampling_weightedRS_percentage_search_space", args.sampling_weightedRS_percentage_search_space)
-            else:
-                raise NotImplementedError("Not supported vairant, please choose one from fl, sampling_weightedRS, baseline")
-        else:
+        adjusting_th = None
+        if variant == Variant.Baseline:
             print(f"MLflow Saved Baseline Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
+        else:
+            if variant == Variant.TH:
+                print(f"MLflow Saved Thresholding Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
+                adjusting_th = True
+            else:
+                print(f"MLflow Saved Child Search Trial {trial.number} Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
+                if variant == Variant.Sampling_ModifiedRS:
+                    sampling_modifiedRS_rho = trial.suggest_float("sampling_modifiedRS_rho", 1.0, 20.0)
+                    sampling_modifiedRS_mode = args.sampling_modifiedRS_mode
+                    mlflow.log_params(
+                        params={
+                            "sampling_modifiedRS_rho_search_space": args.sampling_modifiedRS_rho_search_space,
+                            "sampling_modifiedRS_mode": sampling_modifiedRS_mode
+                            }
+                        )
+                elif variant == Variant.Sampling_WeightedRS:
+                    sampling_weightedRS_percentage = trial.suggest_float("sampling_weightedRS_percentage", -0.5, 10.0)
+                    mlflow.log_param("sampling_weightedRS_percentage_search_space", args.sampling_weightedRS_percentage_search_space)
+                elif variant == Variant.FL:
+                    loss = Loss.Focal_Loss
+                    fl_gamma = trial.suggest_float("fl_gamma", 0.0, 5.0)
+                    mlflow.log_param("fl_gamma_search_space", args.fl_gamma_search_space)
+                elif variant == Variant.WCE:
+                    loss = Loss.Weighted_CE_Loss
+                    if args.data_type == "bin":
+                        wce_alpha = trial.suggest_float("wce_alpha", 0.0, 1.0)
+                        mlflow.log_param("wce_alpha_search_space_bin", args.wce_alpha_search_space_bin)
+                    else:
+                        wce_alpha_index = trial.suggest_int("wce_alpha_index", 0, (args.wce_multi_trial_nums-1))
+                        wce_alpha = args.wce_alpha_search_space_multi[wce_alpha_index]
+                        mlflow.log_param("wce_alpha_search_space_multi", args.wce_alpha_search_space_multi)
+                elif variant == Variant.WFL:
+                    loss = Loss.Weighted_Focal_Loss
+                    fl_gamma = trial.suggest_float("fl_gamma", 0.0, 5.0)
+                    mlflow.log_param("fl_gamma_search_space", args.fl_gamma_search_space)
+                    if args.data_type == "bin":
+                        wce_alpha = trial.suggest_float("wce_alpha", 0.0, 1.0)
+                        mlflow.log_param("wce_alpha_search_space_bin", args.wce_alpha_search_space_bin)
+                    else:
+                        wce_alpha_index = trial.suggest_int("wce_alpha_index", 0, (args.wce_multi_trial_nums-1))
+                        wce_alpha = args.wce_alpha_search_space_multi[wce_alpha_index]
+                        mlflow.log_param("wce_alpha_search_space_multi", args.wce_alpha_search_space_multi)
+                else:
+                    raise NotImplementedError("Not supported vairant, please choose one from fl, sampling_weightedRS, baseline")
+            
         hparams = {
             "sampling_modifiedRS_mode": sampling_modifiedRS_mode,
             "sampling_modifiedRS_rho": sampling_modifiedRS_rho,
             "sampling_weightedRS_percentage": sampling_weightedRS_percentage,
             "wce_alpha": wce_alpha,
             "fl_gamma": fl_gamma,
-            "loss": loss
+            "loss": loss,
+            "adjusting_th": adjusting_th
         }
         mlflow.log_params(hparams)
 
@@ -225,12 +233,13 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             loss=loss,
             wce_alpha=wce_alpha,
             fl_gamma=fl_gamma,
-            device=args.using_gpus
+            device=args.using_gpus,
+            adjusting_th=adjusting_th
         )
         
         # checkpoint callback:
-        ckpt_filename_prefix = args.data_name + "-" + variant.value
-        if variant != Variant.Baseline:
+        ckpt_filename_prefix = args.data_name + "-" + variant_log
+        if variant != Variant.Baseline and variant != Variant.TH:
             ckpt_filename_prefix += f"-Trial_{trial.number}"
             if wce_alpha is not None:
                 ckpt_filename_prefix += f"-wce_alpha={wce_alpha}"
@@ -280,13 +289,13 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         mlflow_logger = MLFlowLogger(experiment_name=mlflow_experiment_name, 
                                     tracking_uri=MLFLOW_TRACKING_URI,
                                     run_id=mlflow_run_id_trial)
-        if variant != Variant.Baseline:
+        if variant != Variant.Baseline and variant != Variant.TH:
             print(f"Runing optuna for hyperparameter search:\nParmas: {hparams}")
             # Optuna tuning callback
             optuna_pruning_callback = PyTorchLightningPruningCallback(trial, monitor=MONITOR)
             # Trainer
             trainer = pl.Trainer(
-                max_epochs=MAX_EPOCHS,
+                max_epochs=args.max_epochs,
                 num_sanity_val_steps=NUM_SANITY_VAL_STEPS,
                 accelerator=ACCELERATOR,
                 devices=args.using_gpus,
@@ -303,9 +312,9 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             trainer.test(model, datamodule=datamodule, ckpt_path="best")
             print(f"END running Trial {trial.number}.\n\n")
         else:
-            print(f"Runing baseline model:\nParmas: {hparams}")
+            print(f"Runing {variant.value} model:\nParmas: {hparams}")
             trainer = pl.Trainer(
-                max_epochs=MAX_EPOCHS,
+                max_epochs=args.max_epochs,
                 num_sanity_val_steps=NUM_SANITY_VAL_STEPS,
                 accelerator=ACCELERATOR,
                 devices=args.using_gpus,
@@ -319,7 +328,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             trainer.validate(model, datamodule=datamodule, ckpt_path="best") # Need to explicitly call validate, otherwise will only take the last val score as the best
             best_monitor_score = trainer.callback_metrics[MONITOR].item()
             trainer.test(model, datamodule=datamodule, ckpt_path="best")
-            print(f"END running baseline.\n\n")
+            print(f"END running {variant.value}.\n\n")
         
     return best_monitor_score
 
@@ -333,16 +342,17 @@ if __name__ == "__main__":
     parser.add_argument('--train_filename', type=str, help='Name of train data.', required=True)
     parser.add_argument('--val_filename', type=str, default=None, help='Name of validation data.')
     parser.add_argument('--test_filename', type=str, default=None, help='Name of test data.')
-    parser.add_argument('--variant', type=str, help='Variant of comparison: "baseline", "sampling_modifiedRS", "sampling_weightedRS", "fl", "wce", "wfl".', choices=["baseline", "sampling_modifiedRS", "sampling_weightedRS", "fl", "wce", "wfl"], required=True)
-    parser.add_argument('--wce_alpha_search_space_bin', nargs="*", type=float, help="alpha for the class 1 in weighted cross entropy.", default=[0.1, 0.25, 0.5, 0.75, 0.9])
+    parser.add_argument('--variant', type=str, help='Variant of comparison: "baseline", "sampling_modifiedRS", "sampling_weightedRS", "fl", "wce", "wfl", "th".', choices=["baseline", "sampling_modifiedRS", "sampling_weightedRS", "fl", "wce", "wfl", "th"], required=True)
+    parser.add_argument('--wce_alpha_search_space_bin', nargs="*", type=float, help="alpha for the class 1 in weighted cross entropy.", default=[0.1, 0.25, 0.75, 0.9])
     parser.add_argument('--wce_alpha_search_space_multi', nargs="*", type=float, help="Must provide the perfect class weights. Will generate random weights later.")
     parser.add_argument('--wce_multi_trial_nums', type=int, help="Generate how many groups of random class weights for multi-class sets (plus the perfect one).", default=7)
-    parser.add_argument('--fl_gamma_search_space', nargs="*", type=float, default=[0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0])
+    parser.add_argument('--fl_gamma_search_space', nargs="*", type=float, default=[0.1, 0.2, 0.5, 1.0, 2.0, 5.0])
     parser.add_argument('--sampling_modifiedRS_mode', type=str, help="Use Modified RS to 'oversamping' or 'undersampling'.", default="oversampling", choices=["oversampling", "undersampling"])
     parser.add_argument('--sampling_modifiedRS_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for a random over/undersampler (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
     parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf).", default=[-0.5, 0.0, 0.5, 1.0, 2.0])
     parser.add_argument('--using_gpus', nargs="*", type=int, default=[0])
     parser.add_argument('--pl_seed', type=int, help='Seed for Lightning.')
+    parser.add_argument('--max_epochs', type=int, default=10, help='Number of epochs.')
 
     args = parser.parse_args()
     main(args)

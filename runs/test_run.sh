@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-python imbalanced_text_classification/main.py --data_name davidson-thon --data_type multi --num_classes 3 --label_col label_multi --train_filename data_clean.csv --sampling_modifiedRS_mode oversampling --variant sampling_modifiedRS --pl_seed 0 --using_gpus 6 &> ./outputs/davidson-thon_sampling_modifiedROS_seed0_output.txt &
+python imbalanced_text_classification/main.py --data_name us-election-2020 --train_filename train_clean.csv --test_filename test_clean.csv --variant th --pl_seed 42 --using_gpus 4 &> ./outputs/us-election-2020_th_seed42_output.txt &

@@ -51,7 +51,9 @@ class ModifiedRandomSampler(Sampler[int]):
     def __resampling_classes(self):
         self.resampled_indices = torch.tensor([], dtype=int)
         for label, indices in self.label2indices.items():
-            if label != self.pivot_class:
+            if (label != self.pivot_class and # if not the maximum/minimum class
+                ((self.mode == "oversampling" and len(indices) < self.num_samples_other_classes) # if has less/more samples than required
+                 or (self.mode == "undersampling" and len(indices) > self.num_samples_other_classes))):
                 sample_index_indexes = torch.randint(0, len(indices), (self.num_samples_other_classes,)).tolist()
                 resampled_indices_label = torch.tensor(indices)[sample_index_indexes]
                 self.resampled_indices = torch.cat((self.resampled_indices, resampled_indices_label))
