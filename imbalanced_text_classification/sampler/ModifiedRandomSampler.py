@@ -41,7 +41,16 @@ class ModifiedRandomSampler(Sampler[int]):
             self.num_samples_other_classes = math.ceil(self.label_counts[min_class] * self.rho_target)
             self.pivot_class = min_class
         num_classes = len(self.label_counts)
-        self.len_resampled_data = (num_classes - 1) * self.num_samples_other_classes + self.label_counts[self.pivot_class]
+        self.len_resampled_data = 0
+        self.labels_for_resampling = []
+        for label, count in self.label_counts.items():
+            if (label != self.pivot_class and # if not the maximum/minimum class
+                ((self.mode == "oversampling" and count < self.num_samples_other_classes) # if has less/more samples than required
+                 or (self.mode == "undersampling" and count > self.num_samples_other_classes))):
+                self.len_resampled_data += self.num_samples_other_classes
+                self.labels_for_resampling.append(label)
+            else:
+                self.len_resampled_data += count
         print(f"Original label_counts: {self.label_counts}")
         print(f"Current imbalance rho = {self.label_counts[max_class] / self.label_counts[min_class]}")
         print(f"Random {self.mode} with sampling_modifiedRS_rho = {self.rho_target} => training set has {self.len_resampled_data} samples.")
@@ -50,13 +59,12 @@ class ModifiedRandomSampler(Sampler[int]):
 
     def __resampling_classes(self):
         self.resampled_indices = torch.tensor([], dtype=int)
+        print(f"Resampling label {self.labels_for_resampling} ... ")
         for label, indices in self.label2indices.items():
-            if (label != self.pivot_class and # if not the maximum/minimum class
-                ((self.mode == "oversampling" and len(indices) < self.num_samples_other_classes) # if has less/more samples than required
-                 or (self.mode == "undersampling" and len(indices) > self.num_samples_other_classes))):
-                sample_index_indexes = torch.randint(0, len(indices), (self.num_samples_other_classes,)).tolist()
-                resampled_indices_label = torch.tensor(indices)[sample_index_indexes]
-                self.resampled_indices = torch.cat((self.resampled_indices, resampled_indices_label))
+            if label in self.labels_for_resampling:
+                sample_indices_index = torch.randint(0, len(indices), (self.num_samples_other_classes,)).tolist()
+                resampled_indices_of_label = torch.tensor(indices)[sample_indices_index]
+                self.resampled_indices = torch.cat((self.resampled_indices, resampled_indices_of_label))
             else:
                 self.resampled_indices = torch.cat((self.resampled_indices, torch.tensor(indices)))
         indexes_shuffle = torch.randperm(self.resampled_indices.shape[0])

@@ -1,8 +1,11 @@
 import math
 import numpy as np
+import nlpaug.augmenter.word.context_word_embs as nawcwe
+import nlpaug.augmenter.word.synonym as nawsyn
 import os
 import pandas as pd
 import pytorch_lightning as pl
+import torch
 from sampler.ModifiedRandomSampler import ModifiedRandomSampler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
@@ -51,7 +54,9 @@ class ImbalancedDataModule(pl.LightningDataModule):
                  num_workers=os.cpu_count(),
                  sampling_weightedRS_percentage=None,
                  sampling_modifiedRS_mode=None,
-                 sampling_modifiedRS_rho=None) -> None:
+                 sampling_modifiedRS_rho=None,
+                 augmentation_rho=None,
+                 augmentation_src=None) -> None:
         super().__init__()
         self.data_path = data_path
         self.train_filename = train_filename
@@ -65,6 +70,8 @@ class ImbalancedDataModule(pl.LightningDataModule):
         self.sampling_weightedRS_percentage = sampling_weightedRS_percentage
         self.sampling_modifiedRS_mode = sampling_modifiedRS_mode
         self.sampling_modifiedRS_rho = sampling_modifiedRS_rho
+        self.augmentation_rho = augmentation_rho
+        self.augmentation_src = augmentation_src
 
         self.train_set = None
         self.val_set = None
@@ -102,6 +109,8 @@ class ImbalancedDataModule(pl.LightningDataModule):
             self._print_data_info(test_data, "test", self.label_col)
 
             train_data = train_data.reset_index()
+            if self.augmentation_rho is not None:
+                train_data = self.augmentation(train_data)
             self.train_set = ImbalancedDataset(train_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
             self.sampler = None
             if self.sampling_weightedRS_percentage is not None:
@@ -150,6 +159,65 @@ class ImbalancedDataModule(pl.LightningDataModule):
                           batch_size=self.batch_size, 
                           num_workers=self.num_workers, 
                           shuffle=False)
+    
+    def augmentation(self, train_data):
+        # Augment the training data to a imbalance rate rho
+        # - Configure aug object
+        # augmentation_src = "Bert" # "WordNet"/"Bert"
+        augmented_train_data_name = f"{self.data_path}/{self.augmentation_src}Aug-rho={self.augmentation_rho}_train_data.csv"
+        if os.path.isfile(augmented_train_data_name):
+            print(f"Loading existing augmented train data from {augmented_train_data_name}")
+            train_augmented = self._read_from_csv(augmented_train_data_name)
+        else:
+            print(f"Augmenting train data with {self.augmentation_src} with target rho={self.augmentation_rho} ...")
+            aug_batch_size = 32
+            if self.augmentation_src == 'WordNet':
+                aug = nawsyn.SynonymAug(aug_src='wordnet', aug_p=0.3)
+            elif self.augmentation_src == 'Bert':
+                aug = nawcwe.ContextualWordEmbsAug(
+                        model_path="GroNLP/hateBERT",
+                        model_type='bert',
+                        action='substitute',
+                        top_k=5,
+                        aug_p=0.3,
+                        device="cpu",
+                        batch_size=aug_batch_size
+                    )
+            else:
+                raise NotImplementedError(f"Required augmentation source {self.augmentation_src} is not supported.")
+            # Label count
+            label_counts = dict(train_data[self.label_col].value_counts())
+            label2indices = dict()
+            for label in label_counts.keys():
+                label2indices[label] = train_data.index[train_data[self.label_col] == label].tolist()
+            print(f"Original label counts: {label_counts}")
+            max_class = max(label_counts, key=label_counts.get)
+            num_samples_other_classes = math.ceil(label_counts[max_class] / self.augmentation_rho)
+            #  - Find out which texts to augment
+            augmented_indices = []
+            for label, indices in label2indices.items():
+                print(f"\nCheck label {label}")
+                if num_samples_other_classes > label_counts[label]: # only class with less samples need to be augmented
+                    print(f"Augmenting from {label_counts[label]} to {num_samples_other_classes}")
+                    num_aug = num_samples_other_classes - label_counts[label] # the augmented class = original samples + num_aug augmented samples
+                    # randomly choose num_aug samples for augmentation
+                    augmented_indices_index = torch.randint(0, len(indices), (num_aug,)).tolist()
+                    augmented_indices_of_label = torch.tensor(indices)[augmented_indices_index].tolist()
+                    augmented_indices += augmented_indices_of_label
+            print(f"In total need to augment {len(augmented_indices)} samples.")
+
+            augmented_data = {"text": [], "label": []}
+            for i in range(0, len(augmented_indices), aug_batch_size):
+                indices = augmented_indices[i:i+aug_batch_size]
+                texts = [train_data.loc[index, "text"] for index in indices]
+                labels = [train_data.loc[index, "label"] for index in indices]
+                augmented_data["text"] += aug.augment(data=texts, n=1)
+                augmented_data["label"] += labels
+            df_augmented_data = pd.DataFrame(augmented_data)
+            train_augmented = pd.concat([train_data, df_augmented_data], ignore_index=True)
+            train_augmented.to_csv(augmented_train_data_name, index=False)
+        print(f"After augmentation: {dict(train_augmented[self.label_col].value_counts())}")
+        return train_augmented
     
     def _read_from_csv(self, data_name):
         if "tsv" in data_name:

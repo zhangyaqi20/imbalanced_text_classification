@@ -7,6 +7,7 @@ from torchmetrics import MetricCollection
 from torchmetrics.classification import Precision, Recall, F1Score, Accuracy, AveragePrecision
 from transformers import AutoModelForSequenceClassification
 from loss.FocalLoss import FocalLoss
+from loss.DiceLoss import DiceLoss
 from loss.Loss import Loss
 from utils.utils import check_dataloader_label_counts
 
@@ -18,7 +19,7 @@ class TextClassifier(pl.LightningModule):
                  num_classes, 
                  device: list,
                  loss: Loss,
-                 wce_alpha: None,
+                 wce_alpha = None,
                  fl_gamma: float = None,
                  adjusting_th: bool = False
                  ):
@@ -29,19 +30,21 @@ class TextClassifier(pl.LightningModule):
         self.weight_decay = weight_decay
         self.num_classes = num_classes
         self.weights = None
-        if wce_alpha is not None:
-            if self.num_classes == 2:
-                if loss == FocalLoss and wce_alpha == 1:
-                    self.weights = torch.FloatTensor([wce_alpha]*2).cuda(device=device[0])
-                else:
-                    self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
-            else:
-                self.weights = torch.FloatTensor(wce_alpha).cuda(device=device[0])
-        if fl_gamma is not None:
-            self.loss_fn = FocalLoss(gamma=fl_gamma, alpha=self.weights)
+        if loss == Loss.Dice_Loss:
+            self.loss_fn = DiceLoss()
+            print(self.loss_fn)
         else:
-            self.loss_fn = nn.CrossEntropyLoss(weight=self.weights)
-            print(f"Using Cross Entropy Loss: alpha={self.weights}")
+            if wce_alpha is not None:
+                if self.num_classes == 2:
+                    self.weights = torch.FloatTensor([1 - wce_alpha, wce_alpha]).cuda(device=device[0])
+                else:
+                    self.weights = torch.FloatTensor(wce_alpha).cuda(device=device[0])
+            if fl_gamma is not None:
+                self.loss_fn = FocalLoss(gamma=fl_gamma, alpha=self.weights)
+                print(self.loss_fn)
+            else:
+                self.loss_fn = nn.CrossEntropyLoss(weight=self.weights)
+                print(f"Using Cross Entropy Loss: alpha={self.weights}")
         
         self.adjusting_th = adjusting_th
         self.train_priors = None

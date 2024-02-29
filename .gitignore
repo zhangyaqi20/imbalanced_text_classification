@@ -1,3 +1,5 @@
 mlruns
-data
+data/*/
 logs
+outputs
+results

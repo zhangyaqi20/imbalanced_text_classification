@@ -31,15 +31,19 @@ MLFLOW_TRACKING_URI = "file:///mounts/Users/cisintern/zhangyaq/imbalanced_text_c
 class Variant(Enum):
     Baseline = "baseline"
     Sampling_ModifiedRS = "sampling_modifiedRS"
-    Sampling_WeightedRS = "sampling_weightedRS"
+    Sampling_WeightedRS_Combi = "sampling_weightedRS_combi"
+    Sampling_WeightedRS_Oversampling = "sampling_weightedRS_oversampling"
+    Augmentation_WordNet = "augmentation_wordnet"
+    Augmentation_Bert = "augmentation_bert"
     WCE = "wce"
     FL = "fl"
     WFL = "wfl"
     TH = "th"
+    DL = "dl"
 
 def main(args):
     variant = Variant(args.variant)
-    if variant == Variant.Baseline or variant == Variant.TH:
+    if variant == Variant.Baseline or variant == Variant.TH or variant == Variant.DL:
         objective(args)
     else:
         pruner = optuna.pruners.NopPruner() # Disable pruning to run all(..) epochs (optuna.pruners.MedianPruner())
@@ -69,7 +73,7 @@ def main(args):
                                 "fl_gamma": args.fl_gamma_search_space}
             else:
                 wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi,# The perfect class weights = 1/N_c
-                                                torch.tensor([1.0]*args.num_classes)] # pure FL
+                                                [1.0]*args.num_classes] # pure FL
                 # Generate random class weights (probabilities)
                 probs_pool = torch.tensor(range(1,10)) * 0.1
                 for i in range(args.wce_multi_trial_nums - len(wce_alpha_search_space_multi)):
@@ -85,8 +89,10 @@ def main(args):
                 print(f"The final wce_alpha_search_space_multi is {args.wce_alpha_search_space_multi}")
         elif variant == Variant.Sampling_ModifiedRS:
             search_space = {"sampling_modifiedRS_rho": args.sampling_modifiedRS_rho_search_space}
-        elif variant == Variant.Sampling_WeightedRS:
+        elif variant == Variant.Sampling_WeightedRS_Combi or variant == Variant.Sampling_WeightedRS_Oversampling:
             search_space = {"sampling_weightedRS_percentage": args.sampling_weightedRS_percentage_search_space}
+        elif variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_WordNet:
+            search_space = {"augmentation_rho": args.augmentation_rho_search_space}
         sampler = optuna.samplers.GridSampler(search_space)
         study = optuna.create_study(study_name=f"{args.data_name}_{variant.value}", direction="maximize", pruner=pruner, sampler=sampler)
         study.optimize(lambda trial: objective(trial=trial, args=args), gc_after_trial=True, callbacks=[optuna_champion_callback])
@@ -140,6 +146,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         sampling_modifiedRS_rho = None
         sampling_modifiedRS_mode = None
         sampling_weightedRS_percentage = None
+        augmentation_rho = None
+        augmentation_src = None
         fl_gamma = None
         wce_alpha = None
         adjusting_th = None
@@ -149,6 +157,9 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             if variant == Variant.TH:
                 print(f"MLflow Saved Thresholding Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
                 adjusting_th = True
+            elif variant == Variant.DL:
+                print(f"MLflow Saved Dice Loss Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
+                loss = Loss.Dice_Loss
             else:
                 print(f"MLflow Saved Child Search Trial {trial.number} Log in './mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}'")
                 if variant == Variant.Sampling_ModifiedRS:
@@ -160,7 +171,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                             "sampling_modifiedRS_mode": sampling_modifiedRS_mode
                             }
                         )
-                elif variant == Variant.Sampling_WeightedRS:
+                elif variant == Variant.Sampling_WeightedRS_Combi or variant == Variant.Sampling_WeightedRS_Oversampling:
                     sampling_weightedRS_percentage = trial.suggest_float("sampling_weightedRS_percentage", -0.5, 10.0)
                     mlflow.log_param("sampling_weightedRS_percentage_search_space", args.sampling_weightedRS_percentage_search_space)
                 elif variant == Variant.FL:
@@ -187,6 +198,10 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                         wce_alpha_index = trial.suggest_int("wce_alpha_index", 0, (args.wce_multi_trial_nums-1))
                         wce_alpha = args.wce_alpha_search_space_multi[wce_alpha_index]
                         mlflow.log_param("wce_alpha_search_space_multi", args.wce_alpha_search_space_multi)
+                elif variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_WordNet:
+                    augmentation_rho = trial.suggest_float("augmentation_rho", 1.0, 20.0)
+                    augmentation_src = args.augmentation_src
+                    mlflow.log_param("augmentation_rho_search_space", args.augmentation_rho_search_space)
                 else:
                     raise NotImplementedError("Not supported vairant, please choose one from fl, sampling_weightedRS, baseline")
             
@@ -194,6 +209,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             "sampling_modifiedRS_mode": sampling_modifiedRS_mode,
             "sampling_modifiedRS_rho": sampling_modifiedRS_rho,
             "sampling_weightedRS_percentage": sampling_weightedRS_percentage,
+            "augmentation_rho": augmentation_rho,
+            "augmentation_src": augmentation_src,
             "wce_alpha": wce_alpha,
             "fl_gamma": fl_gamma,
             "loss": loss,
@@ -223,7 +240,9 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             max_token_len=MAX_TOKEN_LEN,
             sampling_modifiedRS_mode=sampling_modifiedRS_mode,
             sampling_modifiedRS_rho=sampling_modifiedRS_rho,
-            sampling_weightedRS_percentage=sampling_weightedRS_percentage
+            sampling_weightedRS_percentage=sampling_weightedRS_percentage,
+            augmentation_rho=augmentation_rho,
+            augmentation_src=augmentation_src
         )
         model = TextClassifier(
             model_url=MODEL_URL,
@@ -239,7 +258,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         
         # checkpoint callback:
         ckpt_filename_prefix = args.data_name + "-" + variant_log
-        if variant != Variant.Baseline and variant != Variant.TH:
+        if variant != Variant.Baseline and variant != Variant.TH and variant != Variant.DL:
             ckpt_filename_prefix += f"-Trial_{trial.number}"
             if wce_alpha is not None:
                 ckpt_filename_prefix += f"-wce_alpha={wce_alpha}"
@@ -289,7 +308,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         mlflow_logger = MLFlowLogger(experiment_name=mlflow_experiment_name, 
                                     tracking_uri=MLFLOW_TRACKING_URI,
                                     run_id=mlflow_run_id_trial)
-        if variant != Variant.Baseline and variant != Variant.TH:
+        if variant != Variant.Baseline and variant != Variant.TH and variant != Variant.DL:
             print(f"Runing optuna for hyperparameter search:\nParmas: {hparams}")
             # Optuna tuning callback
             optuna_pruning_callback = PyTorchLightningPruningCallback(trial, monitor=MONITOR)
@@ -342,14 +361,17 @@ if __name__ == "__main__":
     parser.add_argument('--train_filename', type=str, help='Name of train data.', required=True)
     parser.add_argument('--val_filename', type=str, default=None, help='Name of validation data.')
     parser.add_argument('--test_filename', type=str, default=None, help='Name of test data.')
-    parser.add_argument('--variant', type=str, help='Variant of comparison: "baseline", "sampling_modifiedRS", "sampling_weightedRS", "fl", "wce", "wfl", "th".', choices=["baseline", "sampling_modifiedRS", "sampling_weightedRS", "fl", "wce", "wfl", "th"], required=True)
-    parser.add_argument('--wce_alpha_search_space_bin', nargs="*", type=float, help="alpha for the class 1 in weighted cross entropy.", default=[0.1, 0.25, 0.75, 0.9])
+    parser.add_argument('--variant', type=str, help='Variant of comparison: "baseline", "sampling_modifiedRS", "sampling_weightedRS_combi", "sampling_weightedRS_oversampling", "augmentation_wordnet", "augmentation_bert", "fl", "wce", "wfl", "th", "dl".', 
+                        choices=["baseline", "sampling_modifiedRS", "sampling_weightedRS_combi", "sampling_weightedRS_oversampling", "augmentation_wordnet", "augmentation_bert", "fl", "wce", "wfl", "th", "dl"], required=True)
+    parser.add_argument('--wce_alpha_search_space_bin', nargs="*", type=float, help="alpha for the class 1 in weighted cross entropy.", default=[0.1, 0.25, 0.75, 0.9, 0.99])
     parser.add_argument('--wce_alpha_search_space_multi', nargs="*", type=float, help="Must provide the perfect class weights. Will generate random weights later.")
     parser.add_argument('--wce_multi_trial_nums', type=int, help="Generate how many groups of random class weights for multi-class sets (plus the perfect one).", default=7)
     parser.add_argument('--fl_gamma_search_space', nargs="*", type=float, default=[0.1, 0.2, 0.5, 1.0, 2.0, 5.0])
     parser.add_argument('--sampling_modifiedRS_mode', type=str, help="Use Modified RS to 'oversamping' or 'undersampling'.", default="oversampling", choices=["oversampling", "undersampling"])
     parser.add_argument('--sampling_modifiedRS_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for a random over/undersampler (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
-    parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf).", default=[-0.5, 0.0, 0.5, 1.0, 2.0])
+    parser.add_argument('--augmentation_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for augmentation (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
+    parser.add_argument('--augmentation_src', type=str, help='Source of augmentation: "WordNet", "Bert".', choices=["WordNet", "Bert"])
+    parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf). If combi version: [-0.5, -0.25, 0.0, 0.25, 0.5, 0.75]. Otherwise can be large.", default=[-0.5, -0.25, 0.0, 0.25, 0.5, 0.75])
     parser.add_argument('--using_gpus', nargs="*", type=int, default=[0])
     parser.add_argument('--pl_seed', type=int, help='Seed for Lightning.')
     parser.add_argument('--max_epochs', type=int, default=10, help='Number of epochs.')

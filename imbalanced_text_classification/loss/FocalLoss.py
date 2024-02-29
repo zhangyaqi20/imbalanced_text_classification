@@ -31,7 +31,6 @@ class FocalLoss(nn.Module):
         self.gamma = gamma
         self.alpha = alpha
         self.reduction = reduction
-        print(f"Using Focal Loss: gamma={self.gamma}\talpha={self.alpha}")
 
     def forward(self, input, target):
         # [N, 1]
@@ -72,7 +71,7 @@ class FocalLoss(nn.Module):
         return logprob
 
     def __str__(self):
-        return f"Focal Loss gamma:{self.gamma}"
+        return f"Focal Loss: gamma={self.gamma}, alpha={self.alpha}"
 
     def __repr__(self):
         return str(self)

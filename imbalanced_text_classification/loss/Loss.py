@@ -6,3 +6,4 @@ class Loss(Enum):
     Weighted_CE_Loss = "Weighted_CE_Loss"
     Focal_Loss = "Focal_Loss"
     Weighted_Focal_Loss = "Weighted_Focal_Loss"
+    Dice_Loss = "Dice_Loss"
