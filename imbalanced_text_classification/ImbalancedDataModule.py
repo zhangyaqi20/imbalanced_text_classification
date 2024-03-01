@@ -13,6 +13,7 @@ from torch.utils.data.sampler import WeightedRandomSampler
 from transformers import AutoTokenizer
 from typing import Optional
 from utils.utils import check_dataloader_label_counts
+from augmenter.AbusiveLexiconAugmenter import AbusiveLexiconAugmenter
 
 class ImbalancedDataset(Dataset):
     def __init__(self, data, tokenizer, max_token_len, label_col="label") -> None:
@@ -56,7 +57,9 @@ class ImbalancedDataModule(pl.LightningDataModule):
                  sampling_modifiedRS_mode=None,
                  sampling_modifiedRS_rho=None,
                  augmentation_rho=None,
-                 augmentation_src=None) -> None:
+                 augmentation_src=None,
+                 augmentation_percentage=None,
+                 augmentation_top_k=None) -> None:
         super().__init__()
         self.data_path = data_path
         self.train_filename = train_filename
@@ -72,6 +75,8 @@ class ImbalancedDataModule(pl.LightningDataModule):
         self.sampling_modifiedRS_rho = sampling_modifiedRS_rho
         self.augmentation_rho = augmentation_rho
         self.augmentation_src = augmentation_src
+        self.augmentation_percentage = augmentation_percentage
+        self.augmentation_top_k = augmentation_top_k
 
         self.train_set = None
         self.val_set = None
@@ -163,28 +168,12 @@ class ImbalancedDataModule(pl.LightningDataModule):
     def augmentation(self, train_data):
         # Augment the training data to a imbalance rate rho
         # - Configure aug object
-        # augmentation_src = "Bert" # "WordNet"/"Bert"
-        augmented_train_data_name = f"{self.data_path}/{self.augmentation_src}Aug-rho={self.augmentation_rho}_train_data.csv"
+        # augmentation_src = "Bert" # "WordNet"/"Bert"/"AbusiveLexicon"
+        augmented_train_data_name = f"{self.data_path}/{self.augmentation_src}Aug-rho={self.augmentation_rho}-aug_p={self.augmentation_percentage}-top_k={self.augmentation_top_k}_train_data.csv"
         if os.path.isfile(augmented_train_data_name):
             print(f"Loading existing augmented train data from {augmented_train_data_name}")
             train_augmented = self._read_from_csv(augmented_train_data_name)
         else:
-            print(f"Augmenting train data with {self.augmentation_src} with target rho={self.augmentation_rho} ...")
-            aug_batch_size = 32
-            if self.augmentation_src == 'WordNet':
-                aug = nawsyn.SynonymAug(aug_src='wordnet', aug_p=0.3)
-            elif self.augmentation_src == 'Bert':
-                aug = nawcwe.ContextualWordEmbsAug(
-                        model_path="GroNLP/hateBERT",
-                        model_type='bert',
-                        action='substitute',
-                        top_k=5,
-                        aug_p=0.3,
-                        device="cpu",
-                        batch_size=aug_batch_size
-                    )
-            else:
-                raise NotImplementedError(f"Required augmentation source {self.augmentation_src} is not supported.")
             # Label count
             label_counts = dict(train_data[self.label_col].value_counts())
             label2indices = dict()
@@ -193,29 +182,72 @@ class ImbalancedDataModule(pl.LightningDataModule):
             print(f"Original label counts: {label_counts}")
             max_class = max(label_counts, key=label_counts.get)
             num_samples_other_classes = math.ceil(label_counts[max_class] / self.augmentation_rho)
-            #  - Find out which texts to augment
-            augmented_indices = []
-            for label, indices in label2indices.items():
-                print(f"\nCheck label {label}")
-                if num_samples_other_classes > label_counts[label]: # only class with less samples need to be augmented
-                    print(f"Augmenting from {label_counts[label]} to {num_samples_other_classes}")
-                    num_aug = num_samples_other_classes - label_counts[label] # the augmented class = original samples + num_aug augmented samples
-                    # randomly choose num_aug samples for augmentation
-                    augmented_indices_index = torch.randint(0, len(indices), (num_aug,)).tolist()
-                    augmented_indices_of_label = torch.tensor(indices)[augmented_indices_index].tolist()
-                    augmented_indices += augmented_indices_of_label
-            print(f"In total need to augment {len(augmented_indices)} samples.")
+            
+            if self.augmentation_src == 'Bert' or self.augmentation_src == 'WordNet': 
+                print(f"Augmenting train data with {self.augmentation_src}" 
+                    f"(aug_p={self.augmentation_percentage} top_k={self.augmentation_top_k}) with target rho={self.augmentation_rho} ...")
+                aug_batch_size = 32
+                if self.augmentation_src == 'WordNet':
+                    aug = nawsyn.SynonymAug(aug_src='wordnet', aug_p=self.augmentation_percentage)
+                elif self.augmentation_src == 'Bert':
+                    aug = nawcwe.ContextualWordEmbsAug(
+                            model_path="GroNLP/hateBERT",
+                            model_type='bert',
+                            action='substitute',
+                            top_k=self.augmentation_top_k,
+                            aug_p=self.augmentation_percentage,
+                            device="cpu",
+                            batch_size=aug_batch_size
+                        )
+                #  - Find out which texts to augment
+                augmented_indices = []
+                for label, indices in label2indices.items():
+                    print(f"\nCheck label {label}")
+                    if num_samples_other_classes > label_counts[label]: # only class with less samples need to be augmented
+                        print(f"Augmenting from {label_counts[label]} to {num_samples_other_classes}")
+                        num_aug = num_samples_other_classes - label_counts[label] # the augmented class = original samples + num_aug augmented samples
+                        # randomly choose num_aug samples for augmentation
+                        augmented_indices_index = torch.randint(0, len(indices), (num_aug,)).tolist()
+                        augmented_indices_of_label = torch.tensor(indices)[augmented_indices_index].tolist()
+                        augmented_indices += augmented_indices_of_label
+                print(f"In total need to augment {len(augmented_indices)} samples.")
 
-            augmented_data = {"text": [], "label": []}
+            elif self.augmentation_src == "AbusiveLexicon":
+                print(f"Augmenting train data with abuisve lexicon" 
+                    f"(aug_p={self.augmentation_percentage} top_k={self.augmentation_top_k}) with target rho={self.augmentation_rho} ...")
+                aug = AbusiveLexiconAugmenter(aug_p=self.augmentation_percentage, top_k=self.augmentation_top_k)
+                #  - Find out which texts to augment
+                augmented_indices = []
+                for label, indices in label2indices.items():
+                    print(f"\nCheck label {label}")
+                    if num_samples_other_classes > label_counts[label]: # only class with less samples need to be augmented
+                        print(f"Augmenting from {label_counts[label]} to {num_samples_other_classes}")
+                        num_aug = num_samples_other_classes - label_counts[label] # the augmented class = original samples + num_aug augmented samples
+                        # findout which indices contain the words in abusive lexicon
+                        indices_containing_abusive_words = [index for index in indices if aug.check_if_text_contain_lexicon_words(train_data.loc[index, "text"])]
+                        # randomly choose num_aug samples for augmentation
+                        augmented_indices_index = torch.randint(0, len(indices_containing_abusive_words), (num_aug,)).tolist()
+                        augmented_indices_of_label = torch.tensor(indices_containing_abusive_words)[augmented_indices_index].tolist()
+                        augmented_indices += augmented_indices_of_label
+                print(f"In total need to augment {len(augmented_indices)} samples.")
+
+            elif self.augmentation_src == "ExternalData":
+                pass
+            else:
+                raise NotImplementedError(f"Required augmentation source {self.augmentation_src} is not supported.")
+            
+            # Apply augmenter
+            augmented_data = {"text": [], self.label_col: []}
             for i in range(0, len(augmented_indices), aug_batch_size):
                 indices = augmented_indices[i:i+aug_batch_size]
                 texts = [train_data.loc[index, "text"] for index in indices]
-                labels = [train_data.loc[index, "label"] for index in indices]
+                labels = [train_data.loc[index, self.label_col] for index in indices]
                 augmented_data["text"] += aug.augment(data=texts, n=1)
-                augmented_data["label"] += labels
+                augmented_data[self.label_col] += labels
             df_augmented_data = pd.DataFrame(augmented_data)
             train_augmented = pd.concat([train_data, df_augmented_data], ignore_index=True)
             train_augmented.to_csv(augmented_train_data_name, index=False)
+
         print(f"After augmentation: {dict(train_augmented[self.label_col].value_counts())}")
         return train_augmented
     

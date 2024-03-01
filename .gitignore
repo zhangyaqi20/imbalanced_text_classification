@@ -2,4 +2,4 @@ mlruns
 data/*/
 logs
 outputs
-results
+*/__pycache__/

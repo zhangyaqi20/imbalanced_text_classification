@@ -91,8 +91,13 @@ def main(args):
             search_space = {"sampling_modifiedRS_rho": args.sampling_modifiedRS_rho_search_space}
         elif variant == Variant.Sampling_WeightedRS_Combi or variant == Variant.Sampling_WeightedRS_Oversampling:
             search_space = {"sampling_weightedRS_percentage": args.sampling_weightedRS_percentage_search_space}
-        elif variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_WordNet:
-            search_space = {"augmentation_rho": args.augmentation_rho_search_space}
+        elif variant == Variant.Augmentation_WordNet:
+            search_space = {"augmentation_rho": args.augmentation_rho_search_space,
+                            "augmentation_percentage": args.augmentation_percentage_search_space}
+        elif variant == Variant.Augmentation_Bert:
+            search_space = {"augmentation_rho": args.augmentation_rho_search_space,
+                            "augmentation_percentage": args.augmentation_percentage_search_space,
+                            "augmentation_top_k": args.augmentation_top_k_search_space}
         sampler = optuna.samplers.GridSampler(search_space)
         study = optuna.create_study(study_name=f"{args.data_name}_{variant.value}", direction="maximize", pruner=pruner, sampler=sampler)
         study.optimize(lambda trial: objective(trial=trial, args=args), gc_after_trial=True, callbacks=[optuna_champion_callback])
@@ -148,6 +153,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         sampling_weightedRS_percentage = None
         augmentation_rho = None
         augmentation_src = None
+        augmentation_percentage = None
+        augmentation_top_k = None
         fl_gamma = None
         wce_alpha = None
         adjusting_th = None
@@ -201,7 +208,20 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                 elif variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_WordNet:
                     augmentation_rho = trial.suggest_float("augmentation_rho", 1.0, 20.0)
                     augmentation_src = args.augmentation_src
-                    mlflow.log_param("augmentation_rho_search_space", args.augmentation_rho_search_space)
+                    augmentation_percentage = trial.suggest_float("augmentation_percentage", 0.0, 1.0)
+                    mlflow.log_params(
+                        params={
+                            "augmentation_rho_search_space": args.augmentation_rho_search_space,
+                            "augmentation_percentage_search_space": args.augmentation_percentage_search_space
+                            }
+                        )
+                    if variant == Variant.Augmentation_Bert:
+                        augmentation_top_k = trial.suggest_int("augmentation_top_k", 1, 50)
+                        mlflow.log_params(
+                        params={
+                            "augmentation_top_k_search_space": args.augmentation_top_k_search_space
+                            }
+                        )
                 else:
                     raise NotImplementedError("Not supported vairant, please choose one from fl, sampling_weightedRS, baseline")
             
@@ -211,6 +231,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             "sampling_weightedRS_percentage": sampling_weightedRS_percentage,
             "augmentation_rho": augmentation_rho,
             "augmentation_src": augmentation_src,
+            "augmentation_percentage": augmentation_percentage,
+            "augmentation_top_k": augmentation_top_k,
             "wce_alpha": wce_alpha,
             "fl_gamma": fl_gamma,
             "loss": loss,
@@ -242,7 +264,9 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             sampling_modifiedRS_rho=sampling_modifiedRS_rho,
             sampling_weightedRS_percentage=sampling_weightedRS_percentage,
             augmentation_rho=augmentation_rho,
-            augmentation_src=augmentation_src
+            augmentation_src=augmentation_src,
+            augmentation_percentage=augmentation_percentage,
+            augmentation_top_k=augmentation_top_k
         )
         model = TextClassifier(
             model_url=MODEL_URL,
@@ -371,6 +395,8 @@ if __name__ == "__main__":
     parser.add_argument('--sampling_modifiedRS_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for a random over/undersampler (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
     parser.add_argument('--augmentation_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for augmentation (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
     parser.add_argument('--augmentation_src', type=str, help='Source of augmentation: "WordNet", "Bert".', choices=["WordNet", "Bert"])
+    parser.add_argument('--augmentation_percentage_search_space', nargs="*", type=float, help="How much percentage of tokens in a sentence to augment.", default=[0.1, 0.3, 0.5])
+    parser.add_argument('--augmentation_top_k_search_space', nargs="*", type=int, help="How many top k candidates to consider for bertAug.", default=[1, 3, 5])
     parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf). If combi version: [-0.5, -0.25, 0.0, 0.25, 0.5, 0.75]. Otherwise can be large.", default=[-0.5, -0.25, 0.0, 0.25, 0.5, 0.75])
     parser.add_argument('--using_gpus', nargs="*", type=int, default=[0])
     parser.add_argument('--pl_seed', type=int, help='Seed for Lightning.')
