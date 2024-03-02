@@ -1,19 +1,27 @@
-#!/usr/bin/env bash
-pid=2162624
+# #!/usr/bin/env bash
+# pid=2162624
 
-if [ "$#" -gt 0 ]; then
-    # At least 1 argument was passed in, so assume it is the PID
-    pid="$1"
-fi
+# if [ "$#" -gt 0 ]; then
+#     # At least 1 argument was passed in, so assume it is the PID
+#     pid="$1"
+# fi
 
-# Try to print the process (`ps`) information for this PID. Send it to
-# /dev/null, however, so we don't actually have to look at it. We just want
-# the return code, `$?`, which will be 0 if the process exists and some other
-# number if not.
-ps --pid "$pid" > /dev/null
-# shellcheck disable=SC2181
-if [ "$?" -eq 0 ]; then
-    echo "PID $pid exists and is running."
-else
-    echo "PID $pid does NOT exist."
-fi
+# # Try to print the process (`ps`) information for this PID. Send it to
+# # /dev/null, however, so we don't actually have to look at it. We just want
+# # the return code, `$?`, which will be 0 if the process exists and some other
+# # number if not.
+# ps --pid "$pid" > /dev/null
+# # shellcheck disable=SC2181
+# if [ "$?" -eq 0 ]; then
+#     echo "PID $pid exists and is running."
+# else
+#     echo "PID $pid does NOT exist."
+# fi
+
+# Move files
+for file in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/files.txt); do 
+  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/mlruns/2/"$file" /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/_ignored_results/_ignored_davidson-thon; done
+
+# for f in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/runs/files.txt) ; do 
+#   rm -r /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/twitter-hate-speech-tsa/"$f"
+# done

@@ -35,6 +35,8 @@ class Variant(Enum):
     Sampling_WeightedRS_Oversampling = "sampling_weightedRS_oversampling"
     Augmentation_WordNet = "augmentation_wordnet"
     Augmentation_Bert = "augmentation_bert"
+    Augmentation_AbusiveLexicon = "augmentation_abusive_lexicon"
+    Augmentation_ExternalData = "augmentation_external_data"
     WCE = "wce"
     FL = "fl"
     WFL = "wfl"
@@ -73,7 +75,7 @@ def main(args):
                                 "fl_gamma": args.fl_gamma_search_space}
             else:
                 wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi,# The perfect class weights = 1/N_c
-                                                [1.0]*args.num_classes] # pure FL
+                                                torch.tensor([1.0]*args.num_classes)] # pure FL
                 # Generate random class weights (probabilities)
                 probs_pool = torch.tensor(range(1,10)) * 0.1
                 for i in range(args.wce_multi_trial_nums - len(wce_alpha_search_space_multi)):
@@ -94,10 +96,12 @@ def main(args):
         elif variant == Variant.Augmentation_WordNet:
             search_space = {"augmentation_rho": args.augmentation_rho_search_space,
                             "augmentation_percentage": args.augmentation_percentage_search_space}
-        elif variant == Variant.Augmentation_Bert:
+        elif variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_AbusiveLexicon:
             search_space = {"augmentation_rho": args.augmentation_rho_search_space,
                             "augmentation_percentage": args.augmentation_percentage_search_space,
                             "augmentation_top_k": args.augmentation_top_k_search_space}
+        elif variant == Variant.Augmentation_ExternalData:
+            search_space = {"augmentation_rho": args.augmentation_rho_search_space}
         sampler = optuna.samplers.GridSampler(search_space)
         study = optuna.create_study(study_name=f"{args.data_name}_{variant.value}", direction="maximize", pruner=pruner, sampler=sampler)
         study.optimize(lambda trial: objective(trial=trial, args=args), gc_after_trial=True, callbacks=[optuna_champion_callback])
@@ -155,6 +159,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
         augmentation_src = None
         augmentation_percentage = None
         augmentation_top_k = None
+        augmentation_categories = None
         fl_gamma = None
         wce_alpha = None
         adjusting_th = None
@@ -205,25 +210,23 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                         wce_alpha_index = trial.suggest_int("wce_alpha_index", 0, (args.wce_multi_trial_nums-1))
                         wce_alpha = args.wce_alpha_search_space_multi[wce_alpha_index]
                         mlflow.log_param("wce_alpha_search_space_multi", args.wce_alpha_search_space_multi)
-                elif variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_WordNet:
+                elif (variant == Variant.Augmentation_Bert 
+                      or variant == Variant.Augmentation_WordNet 
+                      or variant == Variant.Augmentation_AbusiveLexicon
+                      or variant == Variant.Augmentation_ExternalData):
                     augmentation_rho = trial.suggest_float("augmentation_rho", 1.0, 20.0)
+                    mlflow.log_param("augmentation_rho_search_space", args.augmentation_rho_search_space)
                     augmentation_src = args.augmentation_src
-                    augmentation_percentage = trial.suggest_float("augmentation_percentage", 0.0, 1.0)
-                    mlflow.log_params(
-                        params={
-                            "augmentation_rho_search_space": args.augmentation_rho_search_space,
-                            "augmentation_percentage_search_space": args.augmentation_percentage_search_space
-                            }
-                        )
-                    if variant == Variant.Augmentation_Bert:
-                        augmentation_top_k = trial.suggest_int("augmentation_top_k", 1, 50)
-                        mlflow.log_params(
-                        params={
-                            "augmentation_top_k_search_space": args.augmentation_top_k_search_space
-                            }
-                        )
+                    if variant == Variant.Augmentation_ExternalData:
+                        augmentation_categories = args.augmentation_categories
+                    else:
+                        augmentation_percentage = trial.suggest_float("augmentation_percentage", 0.0, 1.0)
+                        mlflow.log_param("augmentation_percentage_search_space", args.augmentation_percentage_search_space)
+                        if variant == Variant.Augmentation_Bert or variant == Variant.Augmentation_AbusiveLexicon:
+                            augmentation_top_k = trial.suggest_int("augmentation_top_k", 1, 50)
+                            mlflow.log_param("augmentation_top_k_search_space", args.augmentation_top_k_search_space)
                 else:
-                    raise NotImplementedError("Not supported vairant, please choose one from fl, sampling_weightedRS, baseline")
+                    raise NotImplementedError("Not supported vairant {variant}")
             
         hparams = {
             "sampling_modifiedRS_mode": sampling_modifiedRS_mode,
@@ -233,6 +236,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             "augmentation_src": augmentation_src,
             "augmentation_percentage": augmentation_percentage,
             "augmentation_top_k": augmentation_top_k,
+            "augmentation_categories": augmentation_categories,
             "wce_alpha": wce_alpha,
             "fl_gamma": fl_gamma,
             "loss": loss,
@@ -252,6 +256,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             }
         )
         datamodule = ImbalancedDataModule(
+            data_name=args.data_name,
             data_path=f"data/{args.data_name}/",
             train_filename=args.train_filename,
             val_filename=args.val_filename,
@@ -266,7 +271,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             augmentation_rho=augmentation_rho,
             augmentation_src=augmentation_src,
             augmentation_percentage=augmentation_percentage,
-            augmentation_top_k=augmentation_top_k
+            augmentation_top_k=augmentation_top_k,
+            augmentation_categories=augmentation_categories,
         )
         model = TextClassifier(
             model_url=MODEL_URL,
@@ -292,6 +298,12 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                 ckpt_filename_prefix += f"-{sampling_modifiedRS_mode}-sampling_modifiedRS_rho={sampling_modifiedRS_rho}"
             if sampling_weightedRS_percentage is not None:
                 ckpt_filename_prefix += f"-sampling_weightedRS_percentage={sampling_weightedRS_percentage}"
+            if augmentation_percentage is not None:
+                ckpt_filename_prefix += f"augmentation_percentage={augmentation_percentage}"
+            if augmentation_top_k is not None:
+                ckpt_filename_prefix += f"augmentation_top_k={augmentation_top_k}"
+            if augmentation_categories is not None:
+                ckpt_filename_prefix += f"augmentation_categories={augmentation_categories}"
         ckpt_filename_prefix += f"-seed{args.pl_seed}"
         ckpt_filename = "-{epoch:02d}-{val_f1_macro:.2f}"
         ckpt_dirpath = f"./mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}/artifacts/model_checkpoints"
@@ -385,8 +397,8 @@ if __name__ == "__main__":
     parser.add_argument('--train_filename', type=str, help='Name of train data.', required=True)
     parser.add_argument('--val_filename', type=str, default=None, help='Name of validation data.')
     parser.add_argument('--test_filename', type=str, default=None, help='Name of test data.')
-    parser.add_argument('--variant', type=str, help='Variant of comparison: "baseline", "sampling_modifiedRS", "sampling_weightedRS_combi", "sampling_weightedRS_oversampling", "augmentation_wordnet", "augmentation_bert", "fl", "wce", "wfl", "th", "dl".', 
-                        choices=["baseline", "sampling_modifiedRS", "sampling_weightedRS_combi", "sampling_weightedRS_oversampling", "augmentation_wordnet", "augmentation_bert", "fl", "wce", "wfl", "th", "dl"], required=True)
+    parser.add_argument('--variant', type=str, help='Variant of comparison: "baseline", "sampling_modifiedRS", "sampling_weightedRS_combi", "sampling_weightedRS_oversampling", "augmentation_wordnet", "augmentation_bert", "augmentation_abusive_lexicon", "augmentation_external_data", "fl", "wce", "wfl", "th", "dl".', 
+                        choices=["baseline", "sampling_modifiedRS", "sampling_weightedRS_combi", "sampling_weightedRS_oversampling", "augmentation_wordnet", "augmentation_bert", "augmentation_abusive_lexicon", "augmentation_external_data", "fl", "wce", "wfl", "th", "dl"], required=True)
     parser.add_argument('--wce_alpha_search_space_bin', nargs="*", type=float, help="alpha for the class 1 in weighted cross entropy.", default=[0.1, 0.25, 0.75, 0.9, 0.99])
     parser.add_argument('--wce_alpha_search_space_multi', nargs="*", type=float, help="Must provide the perfect class weights. Will generate random weights later.")
     parser.add_argument('--wce_multi_trial_nums', type=int, help="Generate how many groups of random class weights for multi-class sets (plus the perfect one).", default=7)
@@ -394,9 +406,10 @@ if __name__ == "__main__":
     parser.add_argument('--sampling_modifiedRS_mode', type=str, help="Use Modified RS to 'oversamping' or 'undersampling'.", default="oversampling", choices=["oversampling", "undersampling"])
     parser.add_argument('--sampling_modifiedRS_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for a random over/undersampler (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
     parser.add_argument('--augmentation_rho_search_space', nargs="*", type=float, help="The target imbalance rate rho for augmentation (>=1).", default=[1.0, 1.2, 1.5, 2.0, 3, 5])
-    parser.add_argument('--augmentation_src', type=str, help='Source of augmentation: "WordNet", "Bert".', choices=["WordNet", "Bert"])
-    parser.add_argument('--augmentation_percentage_search_space', nargs="*", type=float, help="How much percentage of tokens in a sentence to augment.", default=[0.1, 0.3, 0.5])
-    parser.add_argument('--augmentation_top_k_search_space', nargs="*", type=int, help="How many top k candidates to consider for bertAug.", default=[1, 3, 5])
+    parser.add_argument('--augmentation_src', type=str, help='Source of augmentation: "WordNet", "Bert", "AbusiveLexicon", "ExternalData".', choices=["WordNet", "Bert", "AbusiveLexicon", "ExternalData"])
+    parser.add_argument('--augmentation_percentage_search_space', nargs="*", type=float, help="How much percentage of tokens in a sentence to augment.", default=[0.1, 0.3])
+    parser.add_argument('--augmentation_top_k_search_space', nargs="*", type=int, help="How many top k candidates to consider for bertAug or lexiconAug.", default=[3, 5])
+    parser.add_argument('--augmentation_categories', nargs="*", type=str, help="Which categories to augment in ExternalAug.")
     parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf). If combi version: [-0.5, -0.25, 0.0, 0.25, 0.5, 0.75]. Otherwise can be large.", default=[-0.5, -0.25, 0.0, 0.25, 0.5, 0.75])
     parser.add_argument('--using_gpus', nargs="*", type=int, default=[0])
     parser.add_argument('--pl_seed', type=int, help='Seed for Lightning.')

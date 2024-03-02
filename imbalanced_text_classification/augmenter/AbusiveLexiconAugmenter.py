@@ -6,13 +6,14 @@ import torch
 
 class AbusiveLexiconAugmenter(): 
     def __init__(self, aug_p, top_k):
-        lexicon_path = 'data/augmentation_src/abusive_language_lexicon/abusive_lexicon.json'
+        dir_path = "/mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/imbalanced_text_classification/augmenter/augmentation_src/abusive_language_lexicon"
+        lexicon_path = f'{dir_path}/abusive_lexicon.json'
         with open(lexicon_path) as f:
             self.lexicon = json.load(f)
-        fasttext_vectors_path = "data/augmentation_src/abusive_language_lexicon/abusive_lexicon_fasttext_vectors.npy"
+        fasttext_vectors_path = f"{dir_path}/abusive_lexicon_fasttext_vectors.npy"
         with open(fasttext_vectors_path, 'rb') as f:
             self.lexicon_vectors = np.load(f)
-        fasttext_model_path = '/mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/data/augmentation_src/abusive_language_lexicon/cc.en.300.bin'
+        fasttext_model_path = f"{dir_path}/cc.en.300.bin"
         self.fasttext_model = fasttext.load_model(fasttext_model_path)
         self.aug_p = aug_p
         self.top_k = top_k
@@ -22,9 +23,9 @@ class AbusiveLexiconAugmenter():
         contained_words = [word for word in self.lexicon if word in text]
         return len(contained_words) > 0
     
-    def augment(self, texts, n=1):
+    def augment(self, data, n=1):
         augmented_texts = []
-        for text in texts:
+        for text in data:
             # print(f"\nAugmenting: text = '{text}'")
             text = text.lower()
             contained_words = []
