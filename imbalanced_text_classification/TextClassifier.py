@@ -73,8 +73,6 @@ class TextClassifier(pl.LightningModule):
 
     def forward(self, x):
         outputs = self.classifier(**x).logits
-        if self.adjusting_th:
-            pass
         return outputs
 
     def training_step(self, batch, batch_idx):

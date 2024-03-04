@@ -20,8 +20,9 @@
 
 # Move files
 for file in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/files.txt); do 
-  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/mlruns/2/"$file" /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/_ignored_results/_ignored_davidson-thon; done
+  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/gibert-2018-shs/"$file" /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/bretschneider-th-main; done
 
-# for f in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/runs/files.txt) ; do 
-#   rm -r /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/twitter-hate-speech-tsa/"$f"
+# Delete files
+# for f in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/files.txt) ; do 
+#   rm -r /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/cmsb-tsd/"$f"
 # done

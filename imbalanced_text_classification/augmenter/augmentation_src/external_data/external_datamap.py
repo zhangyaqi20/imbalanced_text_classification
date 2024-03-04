@@ -11,9 +11,9 @@ category2data_label = {"hate": {'bretschneider-th-main': 1,
                                         'gibert-2018-shs': 0,
                                         'us-election-2020': 0,
                                         'davidson-thon': 2},
-                        "abusive/offensive": {'founta-2018-thas': 2,
+                        "abusive_offensive": {'founta-2018-thas': 2,
                                                 'davidson-thon': 1},
-                        "racism/sexism": {'cmsb-tsd': 1,
+                        "racism_sexism": {'cmsb-tsd': 1,
                                           'waseem-and-hovy-2016': 1,
                                           'ami': 0, 'ami': 1, 'ami': 2, 'ami': 3, 'ami': 4}
                                           }

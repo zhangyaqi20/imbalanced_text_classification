@@ -298,12 +298,14 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                 ckpt_filename_prefix += f"-{sampling_modifiedRS_mode}-sampling_modifiedRS_rho={sampling_modifiedRS_rho}"
             if sampling_weightedRS_percentage is not None:
                 ckpt_filename_prefix += f"-sampling_weightedRS_percentage={sampling_weightedRS_percentage}"
+            if augmentation_rho is not None:
+                ckpt_filename_prefix += f"-augmentation_rho={augmentation_rho}"
             if augmentation_percentage is not None:
-                ckpt_filename_prefix += f"augmentation_percentage={augmentation_percentage}"
+                ckpt_filename_prefix += f"-augmentation_percentage={augmentation_percentage}"
             if augmentation_top_k is not None:
-                ckpt_filename_prefix += f"augmentation_top_k={augmentation_top_k}"
+                ckpt_filename_prefix += f"-augmentation_top_k={augmentation_top_k}"
             if augmentation_categories is not None:
-                ckpt_filename_prefix += f"augmentation_categories={augmentation_categories}"
+                ckpt_filename_prefix += f"-augmentation_categories={augmentation_categories}"
         ckpt_filename_prefix += f"-seed{args.pl_seed}"
         ckpt_filename = "-{epoch:02d}-{val_f1_macro:.2f}"
         ckpt_dirpath = f"./mlruns/{mlflow_experiment_id_trial}/{mlflow_run_id_trial}/artifacts/model_checkpoints"
