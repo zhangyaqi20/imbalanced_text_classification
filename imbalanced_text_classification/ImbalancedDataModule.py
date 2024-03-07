@@ -3,6 +3,7 @@ import numpy as np
 import nlpaug.augmenter.word.context_word_embs as nawcwe
 import nlpaug.augmenter.word.synonym as nawsyn
 import os
+import re
 import pandas as pd
 import pytorch_lightning as pl
 import torch
@@ -62,7 +63,8 @@ class ImbalancedDataModule(pl.LightningDataModule):
                  augmentation_src=None,
                  augmentation_percentage=None,
                  augmentation_top_k=None,
-                 augmentation_categories=None) -> None:
+                 augmentation_categories=None,
+                 preprocessing=False) -> None:
         super().__init__()
         self.data_name = data_name
         self.data_path = data_path
@@ -82,6 +84,7 @@ class ImbalancedDataModule(pl.LightningDataModule):
         self.augmentation_percentage = augmentation_percentage
         self.augmentation_top_k = augmentation_top_k
         self.augmentation_categories = augmentation_categories
+        self.preprocessing = preprocessing
 
         self.train_set = None
         self.val_set = None
@@ -121,6 +124,9 @@ class ImbalancedDataModule(pl.LightningDataModule):
             train_data = train_data.reset_index()
             if self.augmentation_rho is not None:
                 train_data = self.augmentation(train_data)
+                train_data = train_data.reset_index()
+            if self.preprocessing:
+                train_data = self.data_preprocessing(train_data)
             self.train_set = ImbalancedDataset(train_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
             self.sampler = None
             if self.sampling_weightedRS_percentage is not None:
@@ -332,3 +338,31 @@ class ImbalancedDataModule(pl.LightningDataModule):
         sample_weights = [class_weights[y] for y in data[self.label_col]]
         num_after_sampling = int(ratio * len(data)) + len(data)
         return sample_weights, num_after_sampling
+    
+    def data_preprocessing(self, train_data):
+        print(f"Conduting preprocessing ...")
+        train_data["text"] = train_data.apply(lambda row: self._preprocessing(row.text), axis=1)
+        return train_data
+
+    def _preprocessing(self, text):
+        # text = ("Alex URL Brosas <URL> (URL) another someemail@gmail.com idiot @user 😩😩🙌🏽💃🏽SHE"
+        #         "#ALDUBKSGoesToUS  https://t.co/14G7hFwVQm" 
+        #         "<MENTION_1> <MENTION_2> Talk about NYers like that MENTION3🙌🏽🙌🏽 AFTER you've survived 9/11.")
+        # output: "alex  brosas   another someemail@gmail.com idiot she#aldubksgoestous    talk about nyers like that  after you've survived 9/11."
+        text = text.lower()
+        # Remove URLS: "httpxxxx", "URL", 
+        text = re.sub(r"http\S+", "", text)
+        text = re.sub(r"\S*url\S*", "", text)
+        # # Remove user mention: "@user_name", "@user", "MENTION3", "<MENTION_3>"
+        text = re.sub(r" @\S+", "", text)
+        text = re.sub(r"<mention_[0-9]+>", "", text)
+        text = re.sub(r"mention[0-9]+", "", text)
+        # # Remove emojis
+        emoji_pattern = re.compile("["
+                u"\U0001F600-\U0001F64F"  # emoticons
+                u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                                "]+", flags=re.UNICODE)
+        text = emoji_pattern.sub(r'', text)
+        return text

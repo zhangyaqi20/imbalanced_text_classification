@@ -74,8 +74,9 @@ def main(args):
                 search_space = {"wce_alpha": args.wce_alpha_search_space_bin,
                                 "fl_gamma": args.fl_gamma_search_space}
             else:
-                wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi,# The perfect class weights = 1/N_c
-                                                torch.tensor([1.0]*args.num_classes)] # pure FL
+                wce_alpha_search_space_multi = [args.wce_alpha_search_space_multi,]# The perfect class weights = 1/N_c
+                if args.wce_multi_trial_nums > 1:
+                    wce_alpha_search_space_multi.append(torch.tensor([1.0]*args.num_classes)) # pure FL
                 # Generate random class weights (probabilities)
                 probs_pool = torch.tensor(range(1,10)) * 0.1
                 for i in range(args.wce_multi_trial_nums - len(wce_alpha_search_space_multi)):
@@ -240,7 +241,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             "wce_alpha": wce_alpha,
             "fl_gamma": fl_gamma,
             "loss": loss,
-            "adjusting_th": adjusting_th
+            "adjusting_th": adjusting_th,
+            "preprocessing": args.preprocessing
         }
         mlflow.log_params(hparams)
 
@@ -273,6 +275,7 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
             augmentation_percentage=augmentation_percentage,
             augmentation_top_k=augmentation_top_k,
             augmentation_categories=augmentation_categories,
+            preprocessing=args.preprocessing
         )
         model = TextClassifier(
             model_url=MODEL_URL,
@@ -412,6 +415,7 @@ if __name__ == "__main__":
     parser.add_argument('--augmentation_percentage_search_space', nargs="*", type=float, help="How much percentage of tokens in a sentence to augment.", default=[0.1, 0.3])
     parser.add_argument('--augmentation_top_k_search_space', nargs="*", type=int, help="How many top k candidates to consider for bertAug or lexiconAug.", default=[3, 5])
     parser.add_argument('--augmentation_categories', nargs="*", type=str, help="Which categories to augment in ExternalAug.")
+    parser.add_argument('--preprocessing', type=bool, help="Whether to preprocess the text, especially for externalAug.", default=False)
     parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf). If combi version: [-0.5, -0.25, 0.0, 0.25, 0.5, 0.75]. Otherwise can be large.", default=[-0.5, -0.25, 0.0, 0.25, 0.5, 0.75])
     parser.add_argument('--using_gpus', nargs="*", type=int, default=[0])
     parser.add_argument('--pl_seed', type=int, help='Seed for Lightning.')
