@@ -7,7 +7,11 @@ category2data_label = {"hate": {'twitter-hate-speech-tsa': 1,
                                         'davidson-thon': 2},
                         "abusive_offensive_toxic": {'founta-2018-thas': 2,
                                                 'davidson-thon': 1,
-                                                'civil-comments': 1},
+                                                'civil-comments': 1,
+                                                # 'civil-comments-5k-7p5': 1,
+                                                # 'civil-comments-20k': 1,
+                                                'civil-comments-40k': 1,
+                                                },
                         "sexism": {'cmsb-tsd': 1,
                                     'ami': 0, 'ami': 1, 'ami': 2, 'ami': 3, 'ami': 4}
                         }

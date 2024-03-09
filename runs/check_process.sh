@@ -19,8 +19,8 @@
 # fi
 
 # Move files
-for file in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/files.txt); do 
-  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/mlruns/8/"$file" /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/founta-2018-thas; done
+for file in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/runs/files.txt); do 
+  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/mlruns/25/"$file" /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/civil-comments-40k; done
 
 # # Delete files
 # for f in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/files.txt) ; do 
