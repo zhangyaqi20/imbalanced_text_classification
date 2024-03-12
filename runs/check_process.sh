@@ -20,7 +20,7 @@
 
 # Move files
 for file in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/runs/files.txt); do 
-  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/mlruns/25/"$file" /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/logs/civil-comments-40k; done
+  mv /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/mlruns/24/"$file" /mounts/data/proj/zhangyaq/logs/civil-comments-5k-7p5; done
 
 # # Delete files
 # for f in $(cat /mounts/Users/cisintern/zhangyaq/imbalanced_text_classification/files.txt) ; do 

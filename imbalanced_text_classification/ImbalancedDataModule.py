@@ -139,6 +139,9 @@ class ImbalancedDataModule(pl.LightningDataModule):
                 self.sampler = ModifiedRandomSampler(dataset=self.train_set,
                                                      rho_target=self.sampling_modifiedRS_rho,
                                                      mode=self.sampling_modifiedRS_mode)
+            if self.preprocessing:
+                val_data = self.data_preprocessing(val_data)
+                test_data = self.data_preprocessing(test_data)
             val_data = val_data.reset_index()
             self.val_set = ImbalancedDataset(val_data, tokenizer=self.tokenizer, max_token_len=self.max_token_len, label_col=self.label_col)
             test_data = test_data.reset_index()
@@ -199,7 +202,7 @@ class ImbalancedDataModule(pl.LightningDataModule):
             labels_to_augment = [label for label, count in label_counts.items() if count < num_samples_other_classes]
             print(f"Labels {labels_to_augment} need to be augmented")
 
-            if self.augmentation_src == "ExternalData": # TODO test
+            if self.augmentation_src == "ExternalData":
                 print(f"Augmenting train data with {self.augmentation_src} with target rho={self.augmentation_rho} ...")
                 aug_label2external_data = dict()
                 print(f"Categories to augment = {self.augmentation_categories}")
@@ -339,10 +342,10 @@ class ImbalancedDataModule(pl.LightningDataModule):
         num_after_sampling = int(ratio * len(data)) + len(data)
         return sample_weights, num_after_sampling
     
-    def data_preprocessing(self, train_data):
+    def data_preprocessing(self, data):
         print(f"Conduting preprocessing ...")
-        train_data["text"] = train_data.apply(lambda row: self._preprocessing(row.text), axis=1)
-        return train_data
+        data["text"] = data.apply(lambda row: self._preprocessing(row.text), axis=1)
+        return data
 
     def _preprocessing(self, text):
         # text = ("Alex URL Brosas <URL> (URL) another someemail@gmail.com idiot @user 😩😩🙌🏽💃🏽SHE"

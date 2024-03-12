@@ -220,6 +220,9 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
                     augmentation_src = args.augmentation_src
                     if variant == Variant.Augmentation_ExternalData:
                         augmentation_categories = args.augmentation_categories
+                        if args.externalAug_ROS_makeup:
+                            sampling_modifiedRS_rho = augmentation_rho
+                            sampling_modifiedRS_mode = "oversampling"
                     else:
                         augmentation_percentage = trial.suggest_float("augmentation_percentage", 0.0, 1.0)
                         mlflow.log_param("augmentation_percentage_search_space", args.augmentation_percentage_search_space)
@@ -248,6 +251,8 @@ def objective(args, trial: optuna.trial.Trial=None) -> float:
 
         if variant.value == "sampling_modifiedRS" and sampling_modifiedRS_mode is not None:
             variant_log = variant.value + "_" + sampling_modifiedRS_mode
+        elif args.preprocessing:
+            variant_log = variant.value + "_preprocessing"
         else:
             variant_log = variant.value
         mlflow.set_tags(
@@ -415,6 +420,7 @@ if __name__ == "__main__":
     parser.add_argument('--augmentation_percentage_search_space', nargs="*", type=float, help="How much percentage of tokens in a sentence to augment.", default=[0.1, 0.3])
     parser.add_argument('--augmentation_top_k_search_space', nargs="*", type=int, help="How many top k candidates to consider for bertAug or lexiconAug.", default=[3, 5])
     parser.add_argument('--augmentation_categories', nargs="*", type=str, help="Which categories to augment in ExternalAug.")
+    parser.add_argument('--externalAug_ROS_makeup', type=bool, help="Whether to make up class without external data with ROS in externalAug.", default=False)
     parser.add_argument('--preprocessing', type=bool, help="Whether to preprocess the text, especially for externalAug.", default=False)
     parser.add_argument('--sampling_weightedRS_percentage_search_space', nargs="*", type=float, help="The sampling for weighted random sampler (-1, inf). If combi version: [-0.5, -0.25, 0.0, 0.25, 0.5, 0.75]. Otherwise can be large.", default=[-0.5, -0.25, 0.0, 0.25, 0.5, 0.75])
     parser.add_argument('--using_gpus', nargs="*", type=int, default=[0])
