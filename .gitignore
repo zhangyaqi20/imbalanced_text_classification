@@ -1,4 +1,5 @@
 mlruns
 data
+results
 __pycache__/
 imbalanced_text_classification/augmenter/augmentation_src/abusive_language_lexicon/cc.en.300.bin
