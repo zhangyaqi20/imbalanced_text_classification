@@ -17,7 +17,24 @@ We conclude that:
 
 - most methods are sensitive to hyperparameters, yet our suggested choice of hyperparameters provides a good starting point.
 
+
 **Notes**
 ----
+
+To run the project, the following command can be used:
+
+```bash
+python imbalanced_text_classification/main.py 
+        --data_name davidson-thon 
+        --data_type multi 
+        --num_classes 3 
+        --label_col label_multi 
+        --train_filename data_clean.csv 
+        --variant sampling_modifiedRS 
+        --sampling_modifiedRS_mode oversampling 
+        --sampling_modifiedRS_rho_search_space 1.0 1.2 1.5 2.0 3 5 7.5 10 
+        --pl_seed 0 
+        --using_gpus 0 
+```
 
 The current code version can be easily extended in terms of other datasets, imbalanced learning methods, loss functions etc.
